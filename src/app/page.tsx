@@ -1,1 +1,4 @@
-import {redirect} from "next/navigation";export default function Home(){redirect("/cases")}
+import { redirect } from "next/navigation";
+export default function Home() {
+  redirect("/cases");
+}
