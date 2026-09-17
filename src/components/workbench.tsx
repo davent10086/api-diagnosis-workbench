@@ -21,6 +21,7 @@ function parseTrace(text: string): Trace | null {
 
 export function Workbench() {
   const [text, setText] = useState(() => JSON.stringify(demoTrace, null, 2));
+  const [customerQuestion, setCustomerQuestion] = useState("");
   const [approved, setApproved] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [trace, setTrace] = useState<Trace>(demoTrace);
@@ -31,7 +32,10 @@ export function Workbench() {
   const findings = useMemo(() => runRules(trace), [trace]);
 
   async function submit() {
-    const nextTrace = parseTrace(text);
+    const parsedTrace = parseTrace(text);
+    const nextTrace = parsedTrace
+      ? { ...parsedTrace, customerQuestion: customerQuestion.trim() || undefined }
+      : null;
     if (!nextTrace) {
       setError("请输入完整且合法的 Trace JSON；可在示例基础上修改。");
       return;
@@ -92,12 +96,17 @@ export function Workbench() {
         <section className="space-y-3">
           <TraceEditor
             value={text}
+            customerQuestion={customerQuestion}
             saving={saving}
             approved={approved}
             error={error}
             saved={saved}
             onChange={(value) => {
               setText(value);
+              setApproved(false);
+            }}
+            onCustomerQuestionChange={(value) => {
+              setCustomerQuestion(value);
               setApproved(false);
             }}
             onRun={submit}

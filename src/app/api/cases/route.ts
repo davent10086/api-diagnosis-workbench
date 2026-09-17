@@ -9,6 +9,7 @@ import { redactTrace } from "@/lib/redaction";
 const shortString = z.string().max(10_000);
 const traceSchema = z
   .object({
+    customerQuestion: shortString.optional(),
     requestId: z.string().max(200).optional(),
     traceId: z.string().max(200).optional(),
     upstreamRequestId: z.string().max(200).optional(),
@@ -55,40 +56,37 @@ export async function POST(request: NextRequest) {
           confidence: report.confidence / 100,
         })
         .returning({ id: cases.id });
-      await tx
-        .insert(apiTraces)
-        .values({
-          caseId: item.id,
-          requestId: trace.requestId,
-          traceId: trace.traceId,
-          upstreamRequestId: trace.upstreamRequestId,
-          provider: trace.provider,
-          route: trace.route,
-          model: trace.model,
-          statusCode: trace.statusCode,
-          retry:
-            trace.retryCount === undefined
-              ? undefined
-              : { count: trace.retryCount, reason: trace.retryReason },
-          clientRequest: trace.clientRequest,
-          transformedRequest: trace.transformedRequest,
-          upstreamResponse: trace.upstreamResponse,
-          finalResponse: trace.finalResponse,
-        });
+      await tx.insert(apiTraces).values({
+        caseId: item.id,
+        customerQuestion: trace.customerQuestion,
+        requestId: trace.requestId,
+        traceId: trace.traceId,
+        upstreamRequestId: trace.upstreamRequestId,
+        provider: trace.provider,
+        route: trace.route,
+        model: trace.model,
+        statusCode: trace.statusCode,
+        retry:
+          trace.retryCount === undefined
+            ? undefined
+            : { count: trace.retryCount, reason: trace.retryReason },
+        clientRequest: trace.clientRequest,
+        transformedRequest: trace.transformedRequest,
+        upstreamResponse: trace.upstreamResponse,
+        finalResponse: trace.finalResponse,
+      });
       if (findings.length)
-        await tx
-          .insert(ruleFindings)
-          .values(
-            findings.map((finding) => ({
-              caseId: item.id,
-              ruleId: finding.ruleId,
-              severity: finding.severity,
-              faultLayer: finding.faultLayer,
-              evidence: finding.evidence,
-              conclusion: finding.conclusion,
-              needsMoreEvidence: finding.needsMoreEvidence,
-            })),
-          );
+        await tx.insert(ruleFindings).values(
+          findings.map((finding) => ({
+            caseId: item.id,
+            ruleId: finding.ruleId,
+            severity: finding.severity,
+            faultLayer: finding.faultLayer,
+            evidence: finding.evidence,
+            conclusion: finding.conclusion,
+            needsMoreEvidence: finding.needsMoreEvidence,
+          })),
+        );
       return item;
     });
     return NextResponse.json({ id: result.id, findings, report }, { status: 201 });

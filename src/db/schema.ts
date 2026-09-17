@@ -44,6 +44,7 @@ export const apiTraces = pgTable(
     caseId: uuid("case_id")
       .references(() => cases.id)
       .notNull(),
+    customerQuestion: text("customer_question"),
     requestId: text("request_id"),
     traceId: text("trace_id"),
     upstreamRequestId: text("upstream_request_id"),

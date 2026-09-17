@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Shell, Top } from "@/components/app-shell";
 import { ResumeCase } from "@/components/workbench/resume-case";
 import { db } from "@/db/client";
-import { cases, evidenceAssets, ruleFindings } from "@/db/schema";
+import { apiTraces, cases, evidenceAssets, ruleFindings } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
 export default async function Detail({ params }: { params: Promise<{ id: string }> }) {
@@ -15,9 +15,10 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
     throw new Error("数据库不可用");
   }
   if (!item) notFound();
-  const [findings, assets] = await Promise.all([
+  const [findings, assets, traces] = await Promise.all([
     db.select().from(ruleFindings).where(eq(ruleFindings.caseId, id)),
     db.select().from(evidenceAssets).where(eq(evidenceAssets.caseId, id)),
+    db.select().from(apiTraces).where(eq(apiTraces.caseId, id)).limit(1),
   ]);
   return (
     <Shell>
@@ -32,6 +33,12 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
           <p className="mt-4">{item.summary}</p>
           <p className="mt-3 text-sm">{item.finalConclusion}</p>
         </section>
+        {traces[0]?.customerQuestion && (
+          <section className="panel p-4">
+            <h2>客户问题</h2>
+            <p className="mt-2 whitespace-pre-wrap text-sm">{traces[0].customerQuestion}</p>
+          </section>
+        )}
         {item.status === "uploading" && <ResumeCase caseId={id} assetCount={assets.length} />}
         <section className="panel p-4">
           <h2>已保存附件</h2>

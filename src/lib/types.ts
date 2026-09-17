@@ -8,6 +8,7 @@ export type Layer =
   | "unknown";
 export type Severity = "critical" | "high" | "medium" | "low";
 export type Trace = {
+  customerQuestion?: string;
   requestId?: string;
   traceId?: string;
   upstreamRequestId?: string;

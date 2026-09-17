@@ -2,22 +2,45 @@ import { Play } from "lucide-react";
 
 type Props = {
   value: string;
+  customerQuestion: string;
   saving: boolean;
   approved: boolean;
   error: string;
   saved: boolean;
   onChange: (value: string) => void;
+  onCustomerQuestionChange: (value: string) => void;
   onRun: () => void;
 };
-export function TraceEditor({ value, saving, approved, error, saved, onChange, onRun }: Props) {
+export function TraceEditor({
+  value,
+  customerQuestion,
+  saving,
+  approved,
+  error,
+  saved,
+  onChange,
+  onCustomerQuestionChange,
+  onRun,
+}: Props) {
   return (
     <section className="panel p-4">
-      <h2>完整 Trace JSON</h2>
-      <p className="mt-1 text-sm text-muted">
-        输入请求、响应、日志和 SSE 证据；服务端会再次校验和脱敏。
+      <h2>客户问题与 Trace</h2>
+      <label className="label mt-3 block" htmlFor="customer-question">
+        客户问题 / 现象描述
+      </label>
+      <textarea
+        id="customer-question"
+        className="mt-1 min-h-24 w-full rounded border p-3 text-sm"
+        maxLength={10000}
+        value={customerQuestion}
+        onChange={(event) => onCustomerQuestionChange(event.target.value)}
+        placeholder="例如：客户调用 Bedrock 接口时返回 400，想确认是否为工具参数兼容性问题。"
+      />
+      <p className="mt-3 text-sm text-muted">
+        完整 Trace JSON：请求、响应、日志和 SSE 证据；服务端会再次校验和脱敏。
       </p>
       <textarea
-        className="mono mt-3 min-h-64 w-full rounded border p-3 text-xs"
+        className="mono mt-2 min-h-64 w-full rounded border p-3 text-xs"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
