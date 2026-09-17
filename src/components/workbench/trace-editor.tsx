@@ -44,9 +44,9 @@ export function TraceEditor({
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
-      <button disabled={!approved || saving} className="btn btn-primary mt-3" onClick={onRun}>
+      <button disabled={!approved || saving || saved} className="btn btn-primary mt-3" onClick={onRun}>
         <Play size={15} />
-        {saving ? "保存中…" : "运行规则并保存案件"}
+        {saving ? "保存中…" : saved ? "已保存" : "运行规则并保存案件"}
       </button>
       {error && (
         <p className="mt-2 text-sm text-red-700" role="alert">

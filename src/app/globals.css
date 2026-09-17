@@ -9,6 +9,7 @@ body {
   background: #f7f8fa;
   color: #172033;
   font-family: Arial, "Microsoft YaHei", sans-serif;
+  background-image: radial-gradient(circle at top right, #eef2ff 0, transparent 34rem);
 }
 button,
 input,
@@ -24,6 +25,11 @@ textarea {
   border: 1px solid #e5e7eb;
   border-radius: 12px;
   box-shadow: 0 1px 2px #1018280d;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+.panel:hover {
+  border-color: #d8def1;
+  box-shadow: 0 10px 24px #10182812;
 }
 .label {
   font-size: 12px;
@@ -46,13 +52,64 @@ textarea {
   border: 1px solid #d0d5dd;
   background: #fff;
   cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px #10182814;
+}
+.btn:active:not(:disabled) {
+  transform: translateY(0);
 }
 .btn-primary {
   background: #3d56c5;
   color: white;
   border-color: #3d56c5;
 }
+.btn-primary:hover:not(:disabled) {
+  background: #3048b3;
+  border-color: #3048b3;
+}
 .btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+input,
+textarea {
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: #6074d6;
+  box-shadow: 0 0 0 3px #6074d633;
+}
+.animate-fade-up {
+  animation: fade-up 420ms ease both;
+}
+.animate-fade-up:nth-child(2) {
+  animation-delay: 60ms;
+}
+.animate-fade-up:nth-child(3) {
+  animation-delay: 120ms;
+}
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }

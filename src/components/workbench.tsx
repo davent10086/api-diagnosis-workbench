@@ -82,18 +82,25 @@ export function Workbench() {
   return (
     <div>
       <div className="grid gap-4 p-4 xl:grid-cols-[300px_minmax(0,1fr)_380px]">
-        <section className="space-y-3">
-          <EvidenceUploader files={files} onChange={setFiles} />
+        <section className="animate-fade-up space-y-3">
+          <EvidenceUploader
+            files={files}
+            onChange={(nextFiles) => {
+              setFiles(nextFiles);
+              setSaved(false);
+            }}
+          />
           <RedactionPanel
             text={text}
             approved={approved}
             onApply={(value) => {
               setText(value);
               setApproved(true);
+              setSaved(false);
             }}
           />
         </section>
-        <section className="space-y-3">
+        <section className="animate-fade-up space-y-3">
           <TraceEditor
             value={text}
             customerQuestion={customerQuestion}
@@ -113,7 +120,9 @@ export function Workbench() {
           />
           <FindingsPanel findings={findings} />
         </section>
-        <DiagnosisReport report={report} />
+        <div className="animate-fade-up">
+          <DiagnosisReport report={report} />
+        </div>
       </div>
     </div>
   );
