@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { desc } from "drizzle-orm";
 import { Plus } from "lucide-react";
-import { Shell, Top } from "@/components/workbench";
+import { Shell, Top } from "@/components/app-shell";
 import { db } from "@/db/client";
 import { cases } from "@/db/schema";
 

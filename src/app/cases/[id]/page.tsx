@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
-import { Shell, Top } from "@/components/workbench";
+import { Shell, Top } from "@/components/app-shell";
 import { db } from "@/db/client";
 import { cases, ruleFindings } from "@/db/schema";
 

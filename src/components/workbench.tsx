@@ -1,16 +1,40 @@
 "use client";
+
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, FileUp, Play, ShieldCheck, Trash2 } from "lucide-react";
 import { demoTrace } from "@/lib/demo";
-import { hasSensitive, redact } from "@/lib/redaction";
 import { buildReport } from "@/lib/report";
 import { runRules } from "@/lib/rules";
 import type { Report, Trace } from "@/lib/types";
+import { DiagnosisReport, FindingsPanel } from "./workbench/diagnosis-report";
+import { EvidenceUploader } from "./workbench/evidence-uploader";
+import { RedactionPanel } from "./workbench/redaction-panel";
+import { TraceEditor } from "./workbench/trace-editor";
 
-const z={p:"API 排障助手",c:"案件",k:"知识库",r:"规则中心",s:"设置",l:"本地处理"};
-export function Shell({children}:{children:React.ReactNode}){const ns=[[z.c,"/cases"],[z.k,"/knowledge"],[z.r,"/rules"],[z.s,"/settings"]];return <div className="min-h-screen md:grid md:grid-cols-[232px_1fr]"><aside className="bg-navy p-5 text-slate-300"><b className="text-lg text-white">{z.p}</b><nav className="mt-10 space-y-2">{ns.map(([n,u])=><a className="block rounded-lg px-3 py-2 hover:bg-white/10" href={u} key={n}>{n}</a>)}</nav><p className="mt-10 text-xs">证据仅在此设备的 storage/ 目录保存。</p></aside><main>{children}</main></div>}
-export function Top({title=z.c}:{title?:string}){return <header className="flex h-16 items-center justify-between border-b bg-white px-5"><b>{z.c} / {title}</b><span className="badge bg-emerald-50 text-emerald-700"><ShieldCheck size={14}/>{z.l}</span></header>}
-export function Workbench(){const [text,setText]=useState(JSON.stringify(demoTrace,null,2));const [approved,setApproved]=useState(false);const [files,setFiles]=useState<File[]>([]);const [trace,setTrace]=useState<Trace>(demoTrace);const [report,setReport]=useState<Report>(()=>buildReport(demoTrace,runRules(demoTrace)));const [saveError,setSaveError]=useState("");const [saved,setSaved]=useState(false);const [saving,setSaving]=useState(false);const findings=useMemo(()=>runRules(trace),[trace]);
-async function run(){let next:Trace;try{const value:unknown=JSON.parse(text);if(!value||typeof value!=="object"||Array.isArray(value))throw new Error();next=value as Trace}catch{setSaveError("请输入完整 Trace JSON；可在示例基础上修改。");return}const nextFindings=runRules(next);setTrace(next);setReport(buildReport(next,nextFindings));setSaveError("");setSaved(false);setSaving(true);try{const response=await fetch("/api/cases",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({title:`排障 ${next.requestId??new Date().toISOString()}`,trace:next})});const payload=await response.json();if(!response.ok)throw new Error(payload.error);for(const file of files){const form=new FormData();form.set("file",file);const upload=await fetch(`/api/cases/${payload.id}/evidence`,{method:"POST",body:form});if(!upload.ok){const issue=await upload.json();throw new Error(`案件已创建（${payload.id}），附件上传失败：${issue.error}。可刷新后继续处理该案件。`)}}const complete=await fetch(`/api/cases/${payload.id}/complete`,{method:"POST"});if(!complete.ok)throw new Error(`案件已创建（${payload.id}），但尚未完成。`);setSaved(true)}catch(error){setSaveError(error instanceof Error?error.message:"案件保存失败。")}finally{setSaving(false)}}
- return <div><Top title="新建案件"/><div className="grid gap-4 p-4 xl:grid-cols-[300px_minmax(0,1fr)_380px]"><section className="space-y-3"><div className="panel p-4"><h2>证据上传</h2><label className="mt-3 flex cursor-pointer flex-col items-center rounded-lg border border-dashed p-5 text-sm"><FileUp/><span>上传 PNG、JPEG、JSON 或 TXT（单个最大 10 MB）</span><input className="hidden" multiple type="file" accept="image/png,image/jpeg,.json,.txt,text/plain,application/json" onChange={e=>setFiles(Array.from(e.target.files??[]))}/></label>{files.map(file=><p className="mt-2 flex justify-between rounded bg-slate-50 p-2 text-sm" key={`${file.name}-${file.lastModified}`}>{file.name}<button aria-label={`移除 ${file.name}`} onClick={()=>setFiles(old=>old.filter(x=>x!==file))}><Trash2 size={14}/></button></p>)}</div><div className="panel p-4"><h3>脱敏确认</h3>{hasSensitive(text)&&<p className="text-xs text-amber-700">发现敏感信息，保存前必须遮蔽。</p>}<button className="btn mt-3" onClick={()=>{setText(redact(text));setApproved(true)}}>{approved?<CheckCircle2/>:<ShieldCheck/>}{approved?"已确认脱敏":"应用遮蔽并确认"}</button></div></section><section className="space-y-3"><div className="panel p-4"><h2>完整 Trace JSON</h2><textarea className="mono mt-3 min-h-64 w-full rounded border p-3 text-xs" value={text} onChange={e=>{setText(e.target.value);setApproved(false)}}/><button disabled={!approved||saving} className="btn btn-primary mt-3" onClick={run}><Play size={15}/>{saving?"保存中…":"运行规则并保存案件"}</button>{saveError&&<p className="mt-2 text-sm text-red-700" role="alert">{saveError}</p>}{saved&&<p className="mt-2 text-sm text-emerald-700" role="status">案件与附件已保存到本地数据库。</p>}</div><div className="panel p-4"><h3>规则命中</h3>{findings.map(x=><p className="mt-2 border-l-4 border-amber-400 bg-amber-50 p-2 text-sm" key={x.ruleId}><b>{x.ruleId}</b> {x.conclusion}</p>)}</div></section><Report report={report}/></div></div>}
-function Report({report}:{report:Report}){return <aside className="panel h-fit p-4"><h2>诊断报告</h2><div className="mt-3 bg-orange-50 p-3"><AlertTriangle className="inline" size={16}/>{report.symptom}<p>{report.confidence}% · {report.fault_layer}</p></div><h3 className="mt-4">下一步检查</h3>{report.next_checks.map(item=><p className="mt-2 text-sm" key={item}>{item}</p>)}<h3 className="mt-4">对外沟通话术</h3><p className="text-sm">{report.external_message}</p></aside>}
+function parseTrace(text:string):Trace | null { try { const value:unknown=JSON.parse(text); return value && typeof value==="object" && !Array.isArray(value) ? value as Trace : null; } catch { return null; } }
+
+export function Workbench() {
+  const [text, setText] = useState(() => JSON.stringify(demoTrace, null, 2));
+  const [approved, setApproved] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
+  const [trace, setTrace] = useState<Trace>(demoTrace);
+  const [report, setReport] = useState<Report>(() => buildReport(demoTrace, runRules(demoTrace)));
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const findings = useMemo(() => runRules(trace), [trace]);
+
+  async function submit() {
+    const nextTrace = parseTrace(text);
+    if (!nextTrace) { setError("请输入完整且合法的 Trace JSON；可在示例基础上修改。"); return; }
+    const nextFindings = runRules(nextTrace);
+    setTrace(nextTrace); setReport(buildReport(nextTrace, nextFindings)); setError(""); setSaved(false); setSaving(true);
+    try {
+      const created = await fetch("/api/cases", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({title:`排障 ${nextTrace.requestId ?? new Date().toISOString()}`,trace:nextTrace}) });
+      const payload = await created.json(); if (!created.ok) throw new Error(payload.error);
+      for (const file of files) { const form=new FormData(); form.set("file",file); const uploaded=await fetch(`/api/cases/${payload.id}/evidence`,{method:"POST",body:form}); if(!uploaded.ok){const issue=await uploaded.json();throw new Error(`案件已创建（${payload.id}），附件上传失败：${issue.error}。`);} }
+      const completed=await fetch(`/api/cases/${payload.id}/complete`,{method:"POST"}); if(!completed.ok)throw new Error(`案件已创建（${payload.id}），但尚未完成。`); setSaved(true);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "案件保存失败。"); } finally { setSaving(false); }
+  }
+
+  return <div><div className="grid gap-4 p-4 xl:grid-cols-[300px_minmax(0,1fr)_380px]"><section className="space-y-3"><EvidenceUploader files={files} onChange={setFiles}/><RedactionPanel text={text} approved={approved} onApply={(value)=>{setText(value);setApproved(true);}}/></section><section className="space-y-3"><TraceEditor value={text} saving={saving} approved={approved} error={error} saved={saved} onChange={(value)=>{setText(value);setApproved(false);}} onRun={submit}/><FindingsPanel findings={findings}/></section><DiagnosisReport report={report}/></div></div>;
+}
