@@ -53,6 +53,7 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
             最近一次 AI 诊断未完成：{String((latestRun.report as Record<string, unknown>).error ?? "模型调用失败。")}。规则结果仍可作为人工排障依据。
           </section>
         )}
+        {latestRun && <p className="text-xs text-muted">模型：{latestRun.model ?? "-"} · 推理强度：{latestRun.reasoningEffort ?? "-"}</p>}
         {aiReport && (
           <section className="panel overflow-hidden">
             <div className="border-b border-slate-200 px-4 py-3"><h2 className="section-title">证据诊断报告</h2></div>

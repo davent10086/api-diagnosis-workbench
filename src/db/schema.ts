@@ -98,6 +98,7 @@ export const diagnosisRuns = pgTable("diagnosis_runs", {
     .references(() => cases.id)
     .notNull(),
   model: text("model"),
+  reasoningEffort: text("reasoning_effort"),
   report: jsonb("report").notNull(),
   durationMs: integer("duration_ms"),
   status: text("status").notNull(),

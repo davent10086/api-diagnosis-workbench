@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseAiReport } from "./diagnosis";
+import { normalizeKnowledgeVendor } from "./knowledge";
 
 const report = {
   summary: "429 限流",
@@ -22,5 +23,11 @@ describe("parseAiReport", () => {
   it("rejects malformed JSON and missing required report fields", () => {
     expect(() => parseAiReport("not json")).toThrow();
     expect(() => parseAiReport(JSON.stringify({ summary: "only summary" }))).toThrow();
+  });
+});
+
+describe("knowledge vendor normalization", () => {
+  it("normalizes provider names before filtering the knowledge base", () => {
+    expect(normalizeKnowledgeVendor(" Anthropic ")).toBe("anthropic");
   });
 });

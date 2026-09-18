@@ -1,41 +1,5 @@
 "use client";
-
 import { RefreshCw } from "lucide-react";
 import { useRef, useState } from "react";
-
-export function DiagnosisRunner({ caseId, latestStatus }: { caseId: string; latestStatus?: string }) {
-  const [running, setRunning] = useState(false);
-  const [message, setMessage] = useState("");
-  const controller = useRef<AbortController | null>(null);
-  async function run() {
-    setRunning(true);
-    setMessage("");
-    controller.current = new AbortController();
-    try {
-      const response = await fetch(`/api/cases/${caseId}/diagnosis`, { method: "POST", signal: controller.current.signal });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error);
-      setMessage("AI 诊断已完成，页面正在刷新。");
-      window.location.reload();
-    } catch (error) {
-      setMessage(error instanceof DOMException && error.name === "AbortError" ? "已请求取消诊断。" : error instanceof Error ? error.message : "AI 诊断失败，可稍后重试。");
-    } finally {
-      controller.current = null;
-      setRunning(false);
-    }
-  }
-  const failed = latestStatus === "failed";
-  return (
-    <section className="panel p-4">
-      <div className="flex items-start justify-between gap-4">
-        <div><h2 className="section-title">千问证据诊断</h2><p className="mt-2 text-sm leading-6 text-muted">仅向模型发送已脱敏的 Trace、文本与人工确认脱敏的截图。</p></div>
-      </div>
-      <button className="btn btn-primary mt-4" disabled={running} onClick={run}>
-        <RefreshCw size={16} className={running ? "animate-spin" : ""} />
-        {running ? "正在分析证据…" : failed ? "重试 AI 诊断" : "运行 AI 诊断"}
-      </button>
-      {running && <button className="btn ml-2 mt-4" onClick={() => controller.current?.abort()}>取消</button>}
-      {message && <p className="mt-3 text-sm text-muted" role="status">{message}</p>}
-    </section>
-  );
-}
+type ReasoningEffort = "low" | "high" | "max";
+export function DiagnosisRunner({ caseId, latestStatus }: { caseId: string; latestStatus?: string }) { const [running, setRunning] = useState(false); const [message, setMessage] = useState(""); const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>("high"); const controller = useRef<AbortController | null>(null); async function run() { setRunning(true); setMessage(""); controller.current = new AbortController(); try { const response = await fetch(`/api/cases/${caseId}/diagnosis`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ reasoningEffort }), signal: controller.current.signal }); const body = await response.json(); if (!response.ok) throw new Error(body.error); setMessage("AI 深度诊断已完成，页面正在刷新。"); window.location.reload(); } catch (error) { setMessage(error instanceof DOMException && error.name === "AbortError" ? "已取消诊断请求。" : error instanceof Error ? error.message : "AI 诊断失败，可稍后重试。"); } finally { controller.current = null; setRunning(false); } } const failed = latestStatus === "failed"; return <section className="panel p-4"><div><h2 className="section-title">千问深度诊断</h2><p className="mt-2 text-sm leading-6 text-muted">仅向模型发送已脱敏的 Trace、文本与人工确认脱敏的截图。推理过程不会保存或展示。</p></div><label className="mt-4 block max-w-xs text-sm font-medium text-slate-700">推理强度<select className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm" disabled={running} value={reasoningEffort} onChange={(event) => setReasoningEffort(event.target.value as ReasoningEffort)}><option value="low">低</option><option value="high">高（默认）</option><option value="max">最高</option></select></label><button className="btn btn-primary mt-4" disabled={running} onClick={run}><RefreshCw size={16} className={running ? "animate-spin" : ""} />{running ? "正在分析证据…" : failed ? "重试 AI 诊断" : "运行 AI 深度诊断"}</button>{running && <button className="btn ml-2 mt-4" onClick={() => controller.current?.abort()}>取消</button>}{message && <p className="mt-3 text-sm text-muted" role="status">{message}</p>}</section>; }
