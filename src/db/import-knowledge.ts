@@ -52,11 +52,24 @@ async function main() {
   if (!root) throw new Error("KNOWLEDGE_BASE_PATH 未配置");
   const paths = await files(root);
   const records: Chunk[] = [];
+  let importedFiles = 0;
   for (const path of paths) {
     if (/(?:^|[\\/])(README|KNOWLEDGE-BASE)\.md$/i.test(path)) continue;
     const raw = await readFile(path, "utf8");
-    records.push(...parse(raw, relative(root, path)));
+    const chunks = parse(raw, relative(root, path));
+    if (!chunks.length) continue;
+    for (const chunk of chunks) {
+      try {
+        const url = new URL(chunk.sourceUrl);
+        if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("unsupported protocol");
+      } catch {
+        throw new Error(`知识文档缺少有效 source URL: ${relative(root, path)}`);
+      }
+    }
+    records.push(...chunks);
+    importedFiles++;
   }
+  if (!records.length) throw new Error("没有可导入的知识文档块；数据库保持不变。");
   await db.transaction(async (tx) => {
     await tx.delete(documentChunks);
     for (let i = 0; i < records.length; i += 100) {
@@ -65,7 +78,7 @@ async function main() {
         .values(records.slice(i, i + 100).map((x) => ({ ...x, fetchedAt: new Date() })));
     }
   });
-  console.log(`已导入 ${records.length} 个文档块，来源 ${paths.length} 个 Markdown 文件。`);
+  console.log(`已导入 ${records.length} 个文档块，来源 ${importedFiles} 个 Markdown 文件。`);
   await pool.end();
 }
 main().catch((e) => {

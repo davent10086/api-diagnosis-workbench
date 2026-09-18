@@ -1,23 +1,26 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 export function DiagnosisRunner({ caseId, latestStatus }: { caseId: string; latestStatus?: string }) {
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState("");
+  const controller = useRef<AbortController | null>(null);
   async function run() {
     setRunning(true);
     setMessage("");
+    controller.current = new AbortController();
     try {
-      const response = await fetch(`/api/cases/${caseId}/diagnosis`, { method: "POST" });
+      const response = await fetch(`/api/cases/${caseId}/diagnosis`, { method: "POST", signal: controller.current.signal });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error);
       setMessage("AI 诊断已完成，页面正在刷新。");
       window.location.reload();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "AI 诊断失败，可稍后重试。");
+      setMessage(error instanceof DOMException && error.name === "AbortError" ? "已请求取消诊断。" : error instanceof Error ? error.message : "AI 诊断失败，可稍后重试。");
     } finally {
+      controller.current = null;
       setRunning(false);
     }
   }
@@ -31,6 +34,7 @@ export function DiagnosisRunner({ caseId, latestStatus }: { caseId: string; late
         <RefreshCw size={16} className={running ? "animate-spin" : ""} />
         {running ? "正在分析证据…" : failed ? "重试 AI 诊断" : "运行 AI 诊断"}
       </button>
+      {running && <button className="btn ml-2 mt-4" onClick={() => controller.current?.abort()}>取消</button>}
       {message && <p className="mt-3 text-sm text-muted" role="status">{message}</p>}
     </section>
   );
