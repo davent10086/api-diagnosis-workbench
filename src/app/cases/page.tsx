@@ -17,32 +17,32 @@ export default async function Cases() {
   return (
     <Shell>
       <Top title="案件列表" />
-      <div className="p-6">
-        <div className="mb-5 flex justify-between">
+      <div className="page">
+        <div className="mb-5 flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold">案件</h1>
-            <p className="text-sm text-muted">保留证据、规则与诊断结论的本地排障记录。</p>
+            <h1 className="page-title">案件</h1>
+            <p className="mt-1 text-sm text-muted">本地排障记录与诊断结论。</p>
           </div>
           <Link className="btn btn-primary" href="/cases/new">
             <Plus size={16} />
             新建案件
           </Link>
         </div>
-        <div className="panel p-4">
+        <div className="border border-slate-200 bg-white">
           {unavailable ? (
             <p className="text-sm text-red-700">数据库不可用。请完成迁移并检查 DATABASE_URL。</p>
           ) : items.length === 0 ? (
-            <p className="text-sm text-muted">尚无案件。</p>
+            <div className="px-4 py-10 text-center"><p className="text-sm font-medium text-slate-700">还没有排障案件</p><p className="mt-1 text-sm text-muted">从一份 Trace 或日志开始创建记录。</p></div>
           ) : (
             items.map((item) => (
               <Link
                 href={`/cases/${item.id}`}
-                className="mt-2 block rounded-lg border p-4"
+                className="list-row block transition hover:bg-slate-50"
                 key={item.id}
               >
-                <b>{item.title}</b>
-                <p className="mt-2 text-sm text-muted">
-                  {item.summary ?? "无摘要"} · {item.status} ·{" "}
+                <div className="flex items-center justify-between gap-3"><b className="text-sm font-semibold">{item.title}</b><span className="status-text">{item.status}</span></div>
+                <p className="mt-1 text-sm text-muted">
+                  {item.summary ?? "无摘要"} · {" "}
                   {item.createdAt.toLocaleString("zh-CN")}
                 </p>
               </Link>

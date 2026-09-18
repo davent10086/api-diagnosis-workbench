@@ -3,6 +3,7 @@ import { mkdir, rm, writeFile } from "fs/promises";
 import { basename, join } from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "@/db/client";
 import { cases, evidenceAssets } from "@/db/schema";
 
@@ -19,16 +20,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: "无效的上传表单。" }, { status: 400 });
   }
   const file = form.get("file");
+  const imageRedactionConfirmed = form.get("imageRedactionConfirmed") === "true";
   if (!(file instanceof File) || file.size === 0 || file.size > MAX_BYTES)
     return NextResponse.json({ error: "文件必须介于 1 B 和 10 MB 之间。" }, { status: 400 });
   if (!allowedTypes.has(file.type))
     return NextResponse.json({ error: "只支持 JSON、TXT、PNG 和 JPEG 文件。" }, { status: 415 });
   const { id } = await params;
-  const [caseRecord] = await db
-    .select({ id: cases.id })
-    .from(cases)
-    .where(eq(cases.id, id))
-    .limit(1);
+  if (!z.string().uuid().safeParse(id).success)
+    return NextResponse.json({ error: "案件 ID 无效。" }, { status: 400 });
+  let caseRecord;
+  try {
+    [caseRecord] = await db
+      .select({ id: cases.id })
+      .from(cases)
+      .where(eq(cases.id, id))
+      .limit(1);
+  } catch {
+    return NextResponse.json({ error: "数据库暂不可用。" }, { status: 503 });
+  }
   if (!caseRecord) return NextResponse.json({ error: "案件不存在。" }, { status: 404 });
   let data = Buffer.from(await file.arrayBuffer());
   if (
@@ -53,6 +62,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   } else if (file.type === "text/plain") {
     const { redact } = await import("@/lib/redaction");
     data = Buffer.from(redact(data.toString("utf8")), "utf8");
+    redactionStatus = "redacted";
+  } else if (imageRedactionConfirmed) {
     redactionStatus = "redacted";
   }
   const safeName = basename(file.name).replace(/[^\w.\-]/g, "_");

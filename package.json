@@ -14,6 +14,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/db/seed.ts",
+    "knowledge:clean": "tsx src/db/clean-knowledge.ts",
     "knowledge:import": "tsx src/db/import-knowledge.ts"
   },
   "dependencies": {

@@ -24,13 +24,13 @@ export function TraceEditor({
 }: Props) {
   return (
     <section className="panel p-4">
-      <h2>客户问题与 Trace</h2>
+      <h2 className="section-title">客户问题与 Trace</h2>
       <label className="label mt-3 block" htmlFor="customer-question">
         客户问题 / 现象描述
       </label>
       <textarea
         id="customer-question"
-        className="mt-1 min-h-24 w-full rounded border p-3 text-sm"
+        className="mt-1 min-h-24 w-full rounded-md border bg-slate-50 p-2.5 text-sm"
         maxLength={10000}
         value={customerQuestion}
         onChange={(event) => onCustomerQuestionChange(event.target.value)}
@@ -40,7 +40,7 @@ export function TraceEditor({
         完整 Trace JSON：请求、响应、日志和 SSE 证据；服务端会再次校验和脱敏。
       </p>
       <textarea
-        className="mono mt-2 min-h-64 w-full rounded border p-3 text-xs"
+        className="mono mt-2 min-h-64 w-full rounded-md border bg-slate-950 p-3 text-xs leading-5 text-slate-100"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />

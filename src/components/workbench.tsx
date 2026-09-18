@@ -24,6 +24,7 @@ export function Workbench() {
   const [customerQuestion, setCustomerQuestion] = useState("");
   const [approved, setApproved] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [imagesConfirmed, setImagesConfirmed] = useState(false);
   const [trace, setTrace] = useState<Trace>(demoTrace);
   const [report, setReport] = useState<Report>(() => buildReport(demoTrace, runRules(demoTrace)));
   const [error, setError] = useState("");
@@ -60,6 +61,7 @@ export function Workbench() {
       for (const file of files) {
         const form = new FormData();
         form.set("file", file);
+        form.set("imageRedactionConfirmed", String(imagesConfirmed));
         const uploaded = await fetch(`/api/cases/${payload.id}/evidence`, {
           method: "POST",
           body: form,
@@ -81,14 +83,16 @@ export function Workbench() {
 
   return (
     <div>
-      <div className="grid gap-4 p-4 xl:grid-cols-[300px_minmax(0,1fr)_380px]">
-        <section className="animate-fade-up space-y-3">
+      <div className="mx-auto grid max-w-[1440px] gap-4 p-4 md:p-5 xl:grid-cols-[276px_minmax(0,1fr)_352px]">
+        <section className="space-y-4">
           <EvidenceUploader
             files={files}
             onChange={(nextFiles) => {
               setFiles(nextFiles);
               setSaved(false);
             }}
+            imagesConfirmed={imagesConfirmed}
+            onImagesConfirmedChange={setImagesConfirmed}
           />
           <RedactionPanel
             text={text}
@@ -96,11 +100,10 @@ export function Workbench() {
             onApply={(value) => {
               setText(value);
               setApproved(true);
-              setSaved(false);
             }}
           />
         </section>
-        <section className="animate-fade-up space-y-3">
+        <section className="space-y-4">
           <TraceEditor
             value={text}
             customerQuestion={customerQuestion}
@@ -120,9 +123,7 @@ export function Workbench() {
           />
           <FindingsPanel findings={findings} />
         </section>
-        <div className="animate-fade-up">
-          <DiagnosisReport report={report} />
-        </div>
+        <DiagnosisReport report={report} />
       </div>
     </div>
   );

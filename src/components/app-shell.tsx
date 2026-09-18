@@ -1,41 +1,30 @@
+"use client";
 import Link from "next/link";
-import { BookOpen, FileText, Settings, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { Activity, BookOpen, FileText, Settings, ShieldCheck } from "lucide-react";
 
 const navigation = [
   ["案件", "/cases", FileText],
   ["知识库", "/knowledge", BookOpen],
-  ["规则中心", "/rules", SlidersHorizontal],
+  ["规则中心", "/rules", Activity],
   ["设置", "/settings", Settings],
 ] as const;
 
 export function Shell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   return (
-    <div className="min-h-screen md:grid md:grid-cols-[232px_1fr]">
-      <aside className="bg-navy p-5 text-slate-300">
-        <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-blue-500/20 p-2 text-blue-200">
-            <ShieldCheck size={20} />
-          </div>
-          <div>
-            <b className="text-lg text-white">API 排障助手</b>
-            <p className="mt-0.5 text-xs text-slate-400">本地诊断工作台</p>
-          </div>
-        </div>
-        <nav className="mt-10 space-y-2" aria-label="主导航">
+    <div className="min-h-screen md:grid md:grid-cols-[220px_1fr]">
+      <aside className="border-b border-slate-800 bg-navy px-3 py-4 text-slate-300 md:min-h-screen md:border-b-0 md:border-r">
+        <div className="flex items-center gap-2 px-2"><Activity size={17} className="text-slate-400" /><b className="text-sm font-semibold text-white">API 排障助手</b></div>
+        <p className="mb-2 mt-7 px-2 text-[11px] font-medium text-slate-500">工作台</p>
+        <nav className="grid grid-cols-2 gap-1 md:block md:space-y-1">
           {navigation.map(([name, href, Icon]) => (
-            <Link
-              className="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-white/10 hover:text-white"
-              href={href}
-              key={href}
-            >
-              <Icon size={17} />
-              {name}
+            <Link className={`flex items-center gap-2 border-l-2 px-2 py-2 text-sm transition ${pathname === href || (href === "/cases" && pathname.startsWith("/cases")) ? "border-blue-400 bg-white/[0.07] text-white" : "border-transparent hover:bg-white/[0.04] hover:text-white"}`} href={href} key={href}>
+              <Icon size={15} className="text-slate-400" />{name}
             </Link>
           ))}
         </nav>
-        <p className="mt-10 rounded-lg border border-white/10 bg-white/5 p-3 text-xs leading-5 text-slate-400">
-          证据仅在此设备的 storage/ 目录保存。
-        </p>
+        <p className="mt-8 hidden border-t border-slate-800 px-2 pt-3 text-xs leading-5 text-slate-500 md:block">证据仅保存在当前设备。</p>
       </aside>
       <main>{children}</main>
     </div>
@@ -44,15 +33,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
 export function Top({ title = "案件" }: { title?: string }) {
   return (
-    <header className="sticky top-0 z-10 flex h-16 items-center justify-between border-b bg-white/90 px-5 backdrop-blur">
-      <div>
-        <p className="text-xs text-muted">API 排障助手</p>
-        <b>{title}</b>
-      </div>
-      <span className="badge bg-emerald-50 text-emerald-700">
-        <ShieldCheck size={14} />
-        本地处理
-      </span>
+    <header className="flex h-14 items-center justify-between border-b border-slate-200 bg-white px-5 md:px-6">
+      <b className="text-sm font-semibold text-slate-800">{title}</b>
+      <span className="flex items-center gap-1.5 text-xs text-slate-500"><ShieldCheck size={14} className="text-emerald-600" />本地处理</span>
     </header>
   );
 }

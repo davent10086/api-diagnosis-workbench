@@ -41,6 +41,14 @@ async function seed() {
       priority: 8,
       sourceUrl: "https://ai.google.dev/gemini-api/docs/troubleshooting",
     },
+    {
+      title: "HTTP 缓存排障",
+      body: "排查缓存时，应同时记录 Cache-Control、Age、ETag、Vary 与响应中的 cache status。确认请求是否命中缓存（cache HIT）或未命中（cache MISS），并比较 URL、方法、认证信息和请求头是否改变了缓存键。",
+      vendor: "MDN",
+      category: "缓存",
+      priority: 9,
+      sourceUrl: "https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Caching",
+    },
   ];
   for (const document of documents) {
     const exists = await db

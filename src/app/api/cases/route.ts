@@ -74,6 +74,8 @@ export async function POST(request: NextRequest) {
         transformedRequest: trace.transformedRequest,
         upstreamResponse: trace.upstreamResponse,
         finalResponse: trace.finalResponse,
+        logs: trace.logs,
+        sse: trace.sse,
       });
       if (findings.length)
         await tx.insert(ruleFindings).values(

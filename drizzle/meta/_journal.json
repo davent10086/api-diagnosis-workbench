@@ -22,6 +22,13 @@
       "when": 1789632000000,
       "tag": "0002_customer_question",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789728000000,
+      "tag": "0003_trace_events_and_diagnosis_lock",
+      "breakpoints": true
     }
   ]
 }

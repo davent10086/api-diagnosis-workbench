@@ -4,3 +4,4 @@ tsconfig.tsbuildinfo
 .env.local
 storage/*
 !storage/.gitkeep
+knowledge/official-clean/

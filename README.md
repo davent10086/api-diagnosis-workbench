@@ -43,11 +43,18 @@ npm run knowledge:import
 
 导入器解析每篇 Markdown 的 `source` frontmatter，按标题切块并写入 `document_chunks`。`/knowledge` 调用 PGroonga 搜索接口，优先命中错误码、协议字段和 SSE 事件；`embedding` 字段保留为后续配置千问 Embedding 后的语义召回接口。
 
-迁移使用 Drizzle；`document_chunks.search_vector` 已建 GIN 索引，`embedding` 为可空预留字段，因此不依赖 pgvector。截图应存入 `storage/`，数据库仅存路径、哈希和提取元数据。
+迁移使用 Drizzle；当 PostgreSQL 安装了 PGroonga 时会自动创建全文索引。未安装时应用仍可运行，知识库改用 PostgreSQL 基础包含匹配；`embedding` 为可空预留字段，因此不依赖 pgvector。截图应存入 `storage/`，数据库仅存路径、哈希和提取元数据。
 
-## 当前能力边界
+## AI 证据诊断
 
-当前版本使用确定性规则进行诊断，尚未调用 `.env.local` 中的模型配置，也未实现 Embedding 或模型驱动诊断。附件仅保存到本机 `storage/`；JSON/TXT 会在服务端脱敏后保存，图片需要人工确认已脱敏。
+案件完成后，可在案件详情中点击“运行 AI 诊断”。服务端会编排以下受控能力：
+
+- 对已确认脱敏的 PNG/JPEG 截图调用 `VISION_MODEL` 提取错误码、请求 ID、时间与日志线索；
+- 根据 Trace、规则命中和图片线索检索本地官方知识库；
+- 以 `ANALYSIS_MODEL` 生成带证据、待验证假设、缺失证据和下一步动作的结构化报告；
+- 将每次运行、报告和官方文档引用保存到数据库，模型失败时仍保留确定性规则结果并可重试。
+
+模型请求仅在服务端发起，且只包含已脱敏的最小必要证据。图片在上传时必须由操作人确认已脱敏，未确认的图片不会发送给模型。未配置 `OPENAI_BASE_URL` 或 `OPENAI_API_KEY` 时，案件仍可使用原有规则诊断；AI 诊断会返回明确的配置错误。
 
 ## 检查
 

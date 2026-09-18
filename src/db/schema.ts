@@ -58,6 +58,8 @@ export const apiTraces = pgTable(
     transformedRequest: jsonb("transformed_request"),
     upstreamResponse: jsonb("upstream_response"),
     finalResponse: jsonb("final_response"),
+    logs: jsonb("logs"),
+    sse: jsonb("sse"),
   },
   (t) => [
     index("trace_case_idx").on(t.caseId),

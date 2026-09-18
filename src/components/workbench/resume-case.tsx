@@ -7,6 +7,7 @@ export function ResumeCase({ caseId, assetCount }: { caseId: string; assetCount:
   const [files, setFiles] = useState<File[]>([]);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [imagesConfirmed, setImagesConfirmed] = useState(false);
   async function complete() {
     setSaving(true);
     setMessage("");
@@ -14,6 +15,7 @@ export function ResumeCase({ caseId, assetCount }: { caseId: string; assetCount:
       for (const file of files) {
         const form = new FormData();
         form.set("file", file);
+        form.set("imageRedactionConfirmed", String(imagesConfirmed));
         const response = await fetch(`/api/cases/${caseId}/evidence`, {
           method: "POST",
           body: form,
@@ -40,7 +42,7 @@ export function ResumeCase({ caseId, assetCount }: { caseId: string; assetCount:
         当前已保存 {assetCount} 个附件。补充附件后可完成案件；没有附件时也可直接完成。
       </p>
       <div className="mt-3">
-        <EvidenceUploader files={files} onChange={setFiles} />
+        <EvidenceUploader files={files} onChange={setFiles} imagesConfirmed={imagesConfirmed} onImagesConfirmedChange={setImagesConfirmed} />
       </div>
       <button className="btn btn-primary mt-3" disabled={saving} onClick={complete}>
         {saving ? "保存中…" : "完成案件"}
