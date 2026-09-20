@@ -30,7 +30,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     typeof form.get("evidenceType") === "string"
       ? String(form.get("evidenceType")).slice(0, 40)
       : "attachment";
-  const imageRedactionConfirmed = form.get("imageRedactionConfirmed") === "true";
   if (!(file instanceof File) || file.size === 0 || file.size > MAX_BYTES)
     return NextResponse.json({ error: "文件必须介于 1 B 和 10 MB 之间。" }, { status: 400 });
   if (!allowedTypes.has(file.type))
@@ -69,9 +68,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const { redact } = await import("@/lib/redaction");
     data = Buffer.from(redact(data.toString("utf8")), "utf8");
     redactionStatus = "redacted";
-  } else if (imageRedactionConfirmed) {
-    redactionStatus = "redacted";
-  }
+  } else redactionStatus = "redacted";
   const safeName = basename(file.name).replace(/[^\w.\-]/g, "_");
   const storedName = `${randomUUID()}-${safeName || "evidence"}`;
   try {

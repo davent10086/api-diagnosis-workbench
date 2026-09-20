@@ -124,7 +124,7 @@ export function CaseWorkbench() {
   const [question, setQuestion] = useState("");
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [metadata, setMetadata] = useState<Metadata>(emptyMetadata);
-  const [autoRedaction, setAutoRedaction] = useState(false);
+  const [autoRedaction] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
@@ -469,15 +469,6 @@ export function CaseWorkbench() {
                   accept={ACCEPT}
                   onChange={onFileChange}
                 />
-                <label className="ml-auto flex cursor-pointer items-center gap-2 text-xs text-slate-600">
-                  <input
-                    type="checkbox"
-                    checked={autoRedaction}
-                    onChange={(event) => setAutoRedaction(event.target.checked)}
-                  />
-                  <ShieldCheck size={14} className="text-emerald-600" />
-                  分析前自动脱敏
-                </label>
                 <button
                   className="text-xs font-medium text-slate-600 hover:text-slate-900"
                   onClick={() => setShowRules((value) => !value)}
