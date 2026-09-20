@@ -52,7 +52,10 @@ export default async function Cases() {
                   <span className="status-text">{item.status}</span>
                 </div>
                 <p className="mt-1 text-sm text-muted">
-                  {item.summary ?? "无摘要"} · {item.createdAt.toLocaleString("zh-CN")}
+                  {item.summary ?? "无摘要"} · {item.createdAt.toLocaleString("zh-CN", {
+                    timeZone: "Asia/Shanghai",
+                    hour12: false,
+                  })}
                 </p>
               </Link>
             ))

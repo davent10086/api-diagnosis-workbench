@@ -20,8 +20,8 @@ export const cases = pgTable(
     summary: text("summary"),
     finalConclusion: text("final_conclusion"),
     confidence: real("confidence"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [index("cases_status_updated_idx").on(t.status, t.updatedAt)],
 );
@@ -37,7 +37,7 @@ export const evidenceAssets = pgTable(
     evidenceType: text("evidence_type").notNull(),
     redactionStatus: text("redaction_status").notNull().default("pending"),
     extraction: jsonb("extraction"),
-    uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [index("evidence_case_idx").on(t.caseId)],
 );
@@ -112,7 +112,7 @@ export const diagnosisRuns = pgTable(
     report: jsonb("report").notNull(),
     durationMs: integer("duration_ms"),
     status: text("status").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [index("diagnosis_runs_case_created_idx").on(t.caseId, t.createdAt)],
 );
@@ -141,7 +141,7 @@ export const documentChunks = pgTable(
     category: text("category"),
     priority: integer("priority").default(0),
     sourceUrl: text("source_url").notNull(),
-    fetchedAt: timestamp("fetched_at"),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
     searchVector: tsvector("search_vector"),
     embedding: jsonb("embedding"),
   },

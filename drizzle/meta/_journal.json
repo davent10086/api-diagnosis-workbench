@@ -43,6 +43,13 @@
       "when": 1789891200000,
       "tag": "0005_performance_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790000000000,
+      "tag": "0006_timezone_aware_timestamps",
+      "breakpoints": true
     }
   ]
 }
