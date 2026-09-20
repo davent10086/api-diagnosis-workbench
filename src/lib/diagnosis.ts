@@ -52,7 +52,9 @@ type EvidenceContext = {
   knowledgeIds: Set<string>;
   imageIds: Set<string>;
   traceReferences: Set<string>;
+  textEvidenceIds: Set<string>;
 };
+type TextEvidence = { id: string; evidenceType: string; content: string; truncated: boolean };
 type DashScopeResponse = {
   code?: string;
   message?: string;
@@ -64,6 +66,18 @@ export class DiagnosisNotFoundError extends Error {}
 export class DiagnosisConflictError extends Error {}
 export function parseAiReport(raw: string): AiReport {
   return reportSchema.parse(JSON.parse(raw));
+}
+function isChineseReport(report: AiReport) {
+  const readableText = [
+    report.summary,
+    report.root_cause,
+    report.customer_message,
+    ...report.confirmed_evidence,
+    ...report.hypotheses,
+    ...report.missing_evidence,
+    ...report.next_actions,
+  ];
+  return readableText.every((item) => /[\u3400-\u9fff]/.test(item));
 }
 function assertNotAborted(signal?: AbortSignal) {
   if (signal?.aborted)
@@ -82,6 +96,7 @@ function validateEvidence(report: AiReport, context: EvidenceContext) {
         (source === "rule" && matches(context.ruleIds)) ||
         (source === "knowledge" && matches(context.knowledgeIds)) ||
         (source === "image" && matches(context.imageIds)) ||
+        (source === "text" && matches(context.textEvidenceIds)) ||
         (source === "trace" && matches(context.traceReferences))
       )
     )
@@ -156,13 +171,13 @@ async function extractImage(
         {
           role: "system",
           content:
-            "Extract only visible API troubleshooting facts from the image. Output JSON with summary and fields.",
+            "你是 API 排障证据提取助手。仅提取图片中实际可见的 API 排障事实，不要推测或补全。所有说明性文本必须使用简体中文；错误码、时间戳、请求 ID、Trace ID、接口地址、模型名和原始日志片段必须保持原样。仅输出包含 summary 和 fields 的 JSON 对象。",
         },
         {
           role: "user",
           content: [
             {
-              text: "Extract visible error codes, timestamps, request IDs, trace IDs, endpoints, status codes, and log clues.",
+              text: "请提取图片中可见的错误码、时间戳、请求 ID、Trace ID、接口地址、HTTP 状态码和日志线索。summary 与 fields 中的说明使用简体中文；技术标识符和原始日志片段保持原样。",
             },
             { image: `data:${mime};base64,${data.toString("base64")}` },
           ],
@@ -201,6 +216,7 @@ function stringTokens(value: unknown) {
 }
 function knowledgeQueries(trace: Trace, findings: Finding[], images: ImageExtraction[]) {
   const sources: unknown[] = [
+    trace.customerQuestion,
     trace.provider,
     trace.route,
     trace.model,
@@ -215,6 +231,36 @@ function knowledgeQueries(trace: Trace, findings: Finding[], images: ImageExtrac
     ...images.flatMap((image) => image.fields ?? []),
   ];
   return [...new Set(sources.flatMap(stringTokens))];
+}
+async function readTextEvidence(
+  assets: { id: string; filePath: string; evidenceType: string; redactionStatus: string }[],
+) {
+  const selected = assets
+    .filter((asset) => asset.redactionStatus === "redacted" && /\.(json|txt|log)$/i.test(asset.filePath))
+    .slice(0, 5);
+  let remaining = 120_000;
+  const result: TextEvidence[] = [];
+  for (const asset of selected) {
+    if (remaining <= 0) break;
+    try {
+      const content = await readFile(join(process.cwd(), asset.filePath), "utf8");
+      const included = content.slice(0, Math.min(40_000, remaining));
+      remaining -= included.length;
+      if (included.trim())
+        result.push({ id: asset.id, evidenceType: asset.evidenceType, content: included, truncated: included.length < content.length });
+    } catch {
+      // A missing attachment must not make a case impossible to diagnose; it is simply omitted.
+    }
+  }
+  return result;
+}
+export function knowledgeCitationIds(items: string[]) {
+  return new Set(
+    items.flatMap((item) => {
+      const match = /^knowledge:([0-9a-f-]{36})(?:\s|$)/i.exec(item.trim());
+      return match ? [match[1]] : [];
+    }),
+  );
 }
 function traceReferenceSet(trace: Trace) {
   const refs = new Set([
@@ -293,6 +339,7 @@ export async function runDiagnosis(
     db.select().from(evidenceAssets).where(eq(evidenceAssets.caseId, caseId)),
     db.select().from(ruleFindings).where(eq(ruleFindings.caseId, caseId)),
   ]);
+  const textEvidence = await readTextEvidence(assets);
   const model = process.env.QWEN_ANALYSIS_MODEL || "qwen3.7-plus";
   const run = await db
     .insert(diagnosisRuns)
@@ -312,10 +359,14 @@ export async function runDiagnosis(
         return extractImage(asset, signal);
       },
     );
-    const knowledge = await searchKnowledgeQueries(
-      knowledgeQueries(traceInput, findings as Finding[], images),
-      trace.provider ?? undefined,
-    ).catch(() => [] as KnowledgeHit[]);
+    const knowledgeQueryList = knowledgeQueries(
+      { ...traceInput, logs: [...(traceInput.logs ?? []), ...textEvidence.map((item) => item.content)] },
+      findings as Finding[],
+      images,
+    );
+    const knowledge = await searchKnowledgeQueries(knowledgeQueryList, trace.provider ?? undefined).catch(
+      () => [] as KnowledgeHit[],
+    );
     const similar = await db
       .select({
         id: cases.id,
@@ -340,6 +391,7 @@ export async function runDiagnosis(
         }),
       ),
       imageEvidence: images.map((image, index) => ({ id: approvedImages[index].id, ...image })),
+      textEvidence,
       knowledge: knowledge.slice(0, 5).map((x) => ({
         id: x.id,
         title: x.title,
@@ -348,37 +400,63 @@ export async function runDiagnosis(
       })),
       similarCases: similar,
       instructions:
-        "Diagnose only from supplied evidence. All human-readable report text (summary, root_cause, confirmed_evidence explanations, hypotheses, missing_evidence, next_actions, and customer_message) MUST be written in Simplified Chinese. Preserve error codes, request IDs, trace IDs, model names, API field names, URLs, quoted log fragments, and evidence reference prefixes exactly as supplied. confirmed_evidence must use rule:<id>, trace:<field>, image:<id>, or knowledge:<id>. When provided knowledge directly supports the root cause or a next action, include the relevant knowledge:<id> reference. Put unsupported conclusions in hypotheses. Every item in confirmed_evidence, hypotheses, missing_evidence, and next_actions must be a plain string, never an object. Output JSON with summary, root_cause, confidence, severity, fault_layer, confirmed_evidence, hypotheses, missing_evidence, next_actions, customer_message.",
+        "仅依据所提供的证据进行诊断，不能将推测写成已确认的根因。summary、root_cause、confirmed_evidence 中的说明、hypotheses、missing_evidence、next_actions 和 customer_message 的所有可读文本必须使用简体中文。错误码、请求 ID、Trace ID、模型名、API 字段名、URL、引用的原始日志片段和证据引用前缀必须保持原样。confirmed_evidence 必须使用 rule:<id>、trace:<field>、image:<id>、text:<id> 或 knowledge:<id> 形式的引用；knowledge 引用可在 ID 后附中文说明。若知识库内容直接支持根因或下一步操作，必须包含对应 knowledge:<id> 引用。缺少证据支撑的结论必须写入 hypotheses。confirmed_evidence、hypotheses、missing_evidence 和 next_actions 中的每一项都必须是纯字符串，不能是对象。仅输出 JSON，字段为 summary、root_cause、confidence、severity、fault_layer、confirmed_evidence、hypotheses、missing_evidence、next_actions、customer_message。",
+    };
+    const messages = [
+      {
+        role: "system",
+        content:
+          "你是一名严谨的 API 排障工程师。只可根据输入证据得出结论，不得将假设表述为已确认根因。所有面向读者的分析、建议和客户回复必须使用简体中文；错误码、请求 ID、Trace ID、模型名、API 字段名、URL 及原始证据必须保持原样。输出必须是符合用户要求字段的 JSON 对象，除 JSON 外不要输出任何内容。",
+      },
+      { role: "user", content: JSON.stringify(prompt) },
+    ];
+    const parameters = {
+      enable_thinking: true,
+      reasoning_effort: reasoningEffort,
+      response_format: { type: "json_object" },
     };
     const raw = await dashScopeCompletion(
       "multimodal-generation",
       model,
-      [
-        {
-          role: "system",
-          content:
-            "You are a careful API troubleshooting engineer. Do not present hypotheses as confirmed root causes. Write all human-readable analysis and recommendations in Simplified Chinese; preserve technical identifiers and raw evidence verbatim.",
-        },
-        { role: "user", content: JSON.stringify(prompt) },
-      ],
-      {
-        enable_thinking: true,
-        reasoning_effort: reasoningEffort,
-        response_format: { type: "json_object" },
-      },
+      messages,
+      parameters,
       signal,
     );
-    const report = parseAiReport(raw);
+    let report = parseAiReport(raw);
+    if (!isChineseReport(report)) {
+      const retry = await dashScopeCompletion(
+        "multimodal-generation",
+        model,
+        [
+          ...messages,
+          {
+            role: "user",
+            content:
+              "上一份输出因包含非中文的说明性报告文本而被拒绝。请重新生成完整 JSON。summary、root_cause、confirmed_evidence、hypotheses、missing_evidence、next_actions 与 customer_message 中每一项必须包含简体中文说明；仅技术标识符、原始日志和证据引用可保留原文。",
+          },
+        ],
+        parameters,
+        signal,
+      );
+      report = parseAiReport(retry);
+      if (!isChineseReport(report))
+        throw new Error("Qwen 未返回中文诊断报告，请稍后重试或检查模型配置。");
+    }
     validateEvidence(report, {
       ruleIds: new Set(findings.map((finding) => finding.ruleId)),
       knowledgeIds: new Set(knowledge.slice(0, 5).map((item) => item.id)),
       imageIds: new Set(approvedImages.map((asset) => asset.id)),
+      textEvidenceIds: new Set(textEvidence.map((item) => item.id)),
       traceReferences: traceReferenceSet(traceInput),
     });
     await db.transaction(async (tx) => {
       await tx
         .update(diagnosisRuns)
-        .set({ report, durationMs: Date.now() - started, status: "completed" })
+        .set({
+          report: { ...report, retrieval: { queryCount: knowledgeQueryList.length, hitCount: knowledge.length } },
+          durationMs: Date.now() - started,
+          status: "completed",
+        })
         .where(eq(diagnosisRuns.id, run[0].id));
       await tx
         .update(cases)
@@ -390,11 +468,7 @@ export async function runDiagnosis(
           updatedAt: new Date(),
         })
         .where(eq(cases.id, caseId));
-      const citedIds = new Set(
-        report.confirmed_evidence
-          .filter((item) => item.startsWith("knowledge:"))
-          .map((item) => item.slice("knowledge:".length)),
-      );
+      const citedIds = knowledgeCitationIds(report.confirmed_evidence);
       const refs = knowledge
         .filter((item) => citedIds.has(item.id))
         .map((x) => ({

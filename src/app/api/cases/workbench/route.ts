@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { apiTraces, cases } from "@/db/schema";
+import { apiTraces, cases, ruleFindings } from "@/db/schema";
+import { buildReport } from "@/lib/report";
+import { runRules } from "@/lib/rules";
+import { buildWorkbenchTrace } from "@/lib/workbench-trace";
 
 const text = z.string().max(10_000).optional();
+const traceText = z.string().max(512_000).optional();
 const bodySchema = z.object({
   title: z.string().trim().min(1).max(200),
   question: text,
@@ -17,7 +21,7 @@ const bodySchema = z.object({
     occurredAt: z.string().max(100),
   }),
   advanced: z.object({
-    trace: text,
+    trace: traceText,
     requestHeaders: text,
     response: text,
     sse: text,
@@ -29,32 +33,58 @@ export async function POST(request: Request) {
   if (!parsed.success)
     return NextResponse.json({ error: "Invalid workbench payload." }, { status: 400 });
   const { title, question, metadata, advanced } = parsed.data;
+  let trace;
+  try {
+    trace = buildWorkbenchTrace({ question, metadata, advanced });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "追踪数据无效。" },
+      { status: 400 },
+    );
+  }
+  const findings = runRules(trace);
+  const report = buildReport(trace, findings);
   try {
     const [item] = await db.transaction(async (tx) => {
       const [created] = await tx
         .insert(cases)
-        .values({ title, status: "uploading", summary: question || null })
+        .values({ title, status: "uploading", summary: report.symptom, finalConclusion: report.external_message, confidence: report.confidence / 100 })
         .returning({ id: cases.id });
       await tx
         .insert(apiTraces)
         .values({
           caseId: created.id,
-          customerQuestion: question || null,
-          requestId: metadata.requestId || null,
-          traceId: advanced.trace ? "advanced-trace" : null,
-          upstreamRequestId: metadata.upstreamRequestId || null,
-          provider: metadata.provider || null,
-          route: metadata.route || null,
-          model: metadata.model || null,
-          statusCode: metadata.statusCode ? Number(metadata.statusCode) : null,
-          clientRequest: advanced.requestHeaders ? { raw: advanced.requestHeaders } : null,
-          upstreamResponse: advanced.response ? { raw: advanced.response } : null,
-          sse: advanced.sse ? [advanced.sse] : null,
-          logs: advanced.context ? [advanced.context] : null,
+          customerQuestion: trace.customerQuestion,
+          requestId: trace.requestId,
+          traceId: trace.traceId,
+          upstreamRequestId: trace.upstreamRequestId,
+          provider: trace.provider,
+          route: trace.route,
+          model: trace.model,
+          statusCode: trace.statusCode,
+          retry: trace.retryCount === undefined ? undefined : { count: trace.retryCount, reason: trace.retryReason },
+          clientRequest: trace.clientRequest,
+          transformedRequest: trace.transformedRequest,
+          upstreamResponse: trace.upstreamResponse,
+          finalResponse: trace.finalResponse,
+          logs: trace.logs,
+          sse: trace.sse,
         });
+      if (findings.length)
+        await tx.insert(ruleFindings).values(
+          findings.map((finding) => ({
+            caseId: created.id,
+            ruleId: finding.ruleId,
+            severity: finding.severity,
+            faultLayer: finding.faultLayer,
+            evidence: finding.evidence,
+            conclusion: finding.conclusion,
+            needsMoreEvidence: finding.needsMoreEvidence,
+          })),
+        );
       return [created];
     });
-    return NextResponse.json(item, { status: 201 });
+    return NextResponse.json({ ...item, findings, report }, { status: 201 });
   } catch {
     return NextResponse.json({ error: "Unable to save workbench." }, { status: 503 });
   }

@@ -105,6 +105,9 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
               findingCount={findings.length}
               assetCount={assets.length}
               citationCount={runCitations.length}
+              knowledgeHitCount={Number(
+                (latestRun.report as { retrieval?: { hitCount?: unknown } }).retrieval?.hitCount ?? 0,
+              )}
             />
           </>
         )}
@@ -214,6 +217,7 @@ function ExecutionLog({
   findingCount,
   assetCount,
   citationCount,
+  knowledgeHitCount,
 }: {
   status: string;
   durationMs: number | null;
@@ -221,13 +225,19 @@ function ExecutionLog({
   findingCount: number;
   assetCount: number;
   citationCount: number;
+  knowledgeHitCount: number;
 }) {
   const done = status === "completed";
   const failed = status === "failed" || status === "cancelled";
   const steps = [
     ["规则检查", `命中 ${findingCount} 条规则`],
     ["证据收集", `${assetCount} 个文件`],
-    ["本地文档检索", done ? `已引用 ${citationCount} 篇资料` : "等待诊断完成"],
+    [
+      "本地文档检索",
+      done
+        ? `检索命中 ${Number.isFinite(knowledgeHitCount) ? knowledgeHitCount : 0} 条 · 最终引用 ${citationCount} 篇资料`
+        : "等待诊断完成",
+    ],
     [
       "模型诊断",
       model

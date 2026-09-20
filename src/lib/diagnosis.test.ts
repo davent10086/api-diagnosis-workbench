@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAiReport } from "./diagnosis";
+import { knowledgeCitationIds, parseAiReport } from "./diagnosis";
 import { normalizeKnowledgeVendor } from "./knowledge";
 
 const report = {
@@ -29,5 +29,16 @@ describe("parseAiReport", () => {
 describe("knowledge vendor normalization", () => {
   it("normalizes provider names before filtering the knowledge base", () => {
     expect(normalizeKnowledgeVendor(" Anthropic ")).toBe("anthropic");
+  });
+});
+
+describe("knowledge citations", () => {
+  it("persists a knowledge id even when the model appends an explanation", () => {
+    const id = "123e4567-e89b-12d3-a456-426614174000";
+    expect([...knowledgeCitationIds([`knowledge:${id} 官方文档明确要求数组。`, "rule:http-429"])]).toEqual([id]);
+  });
+
+  it("rejects malformed knowledge references instead of storing arbitrary text as an id", () => {
+    expect([...knowledgeCitationIds(["knowledge:not-a-uuid 说明"])]).toEqual([]);
   });
 });
