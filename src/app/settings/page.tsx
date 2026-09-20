@@ -17,7 +17,7 @@ export default function SettingsPage() {
           <div className="px-4 py-3">
             <b>数据处理</b>
             <p className="mt-2 text-sm text-muted">
-              当前版本使用确定性规则。JSON 和 TXT 会在服务端脱敏；图片需要人工确认已脱敏。
+              JSON 和 TXT 会在服务端脱敏；上传的图片保留原图并可直接用于诊断识别。
             </p>
           </div>
         </div>

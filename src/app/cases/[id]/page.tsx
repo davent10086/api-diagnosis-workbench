@@ -11,6 +11,7 @@ import {
   cases,
   citations,
   diagnosisRuns,
+  diagnosisWorkflowSteps,
   evidenceAssets,
   ruleFindings,
 } from "@/db/schema";
@@ -54,6 +55,12 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
   const latestRun = runs[0];
   const runCitations = latestRun
     ? await db.select().from(citations).where(eq(citations.diagnosisId, latestRun.id))
+    : [];
+  const workflowSteps = latestRun
+    ? await db
+        .select()
+        .from(diagnosisWorkflowSteps)
+        .where(eq(diagnosisWorkflowSteps.diagnosisId, latestRun.id))
     : [];
   const aiReport =
     latestRun?.status === "completed" ? (latestRun.report as Record<string, unknown>) : null;
@@ -105,9 +112,8 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
               findingCount={findings.length}
               assetCount={assets.length}
               citationCount={runCitations.length}
-              knowledgeHitCount={Number(
-                (latestRun.report as { retrieval?: { hitCount?: unknown } }).retrieval?.hitCount ?? 0,
-              )}
+              retrieval={(latestRun.report as { retrieval?: Record<string, unknown> }).retrieval}
+              workflowSteps={workflowSteps.map((step) => ({ nodeName: step.nodeName, status: step.status, summary: step.summary }))}
             />
           </>
         )}
@@ -217,7 +223,8 @@ function ExecutionLog({
   findingCount,
   assetCount,
   citationCount,
-  knowledgeHitCount,
+  retrieval,
+  workflowSteps,
 }: {
   status: string;
   durationMs: number | null;
@@ -225,18 +232,27 @@ function ExecutionLog({
   findingCount: number;
   assetCount: number;
   citationCount: number;
-  knowledgeHitCount: number;
+  retrieval?: Record<string, unknown>;
+  workflowSteps: { nodeName: string; status: string; summary: string | null }[];
 }) {
   const done = status === "completed";
   const failed = status === "failed" || status === "cancelled";
+  const retrievalText = () => {
+    if (!done) return "等待诊断完成";
+    if (retrieval?.backend === "unavailable") return `检索不可用${retrieval.error ? `：${String(retrieval.error)}` : ""}；规则诊断仍已完成`;
+    const vendorHits = Number(retrieval?.vendorHitCount ?? retrieval?.hitCount ?? 0);
+    const fallbackHits = Number(retrieval?.fallbackHitCount ?? 0);
+    const finalDocuments = Number(retrieval?.finalDocumentCount ?? retrieval?.hitCount ?? 0);
+    return retrieval?.fallbackToAll
+      ? `供应商命中 ${vendorHits}，已回退全库命中 ${fallbackHits}，最终引用 ${citationCount} 篇资料（送入模型 ${finalDocuments} 篇）`
+      : `供应商命中 ${vendorHits}，最终引用 ${citationCount} 篇资料（送入模型 ${finalDocuments} 篇）`;
+  };
   const steps = [
     ["规则检查", `命中 ${findingCount} 条规则`],
     ["证据收集", `${assetCount} 个文件`],
     [
       "本地文档检索",
-      done
-        ? `检索命中 ${Number.isFinite(knowledgeHitCount) ? knowledgeHitCount : 0} 条 · 最终引用 ${citationCount} 篇资料`
-        : "等待诊断完成",
+      retrievalText(),
     ],
     [
       "模型诊断",
@@ -268,6 +284,15 @@ function ExecutionLog({
           </li>
         ))}
       </ol>
+      {workflowSteps.length > 0 && (
+        <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-600">
+          {workflowSteps.map((step) => (
+            <p className="mt-1" key={step.nodeName}>
+              {step.nodeName}: {step.status}{step.summary ? ` · ${step.summary}` : ""}
+            </p>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

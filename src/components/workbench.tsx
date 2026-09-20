@@ -24,7 +24,6 @@ export function Workbench() {
   const [customerQuestion, setCustomerQuestion] = useState("");
   const [approved, setApproved] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
-  const [imagesConfirmed, setImagesConfirmed] = useState(false);
   const [trace, setTrace] = useState<Trace>(demoTrace);
   const [report, setReport] = useState<Report>(() => buildReport(demoTrace, runRules(demoTrace)));
   const [error, setError] = useState("");
@@ -61,7 +60,6 @@ export function Workbench() {
       for (const file of files) {
         const form = new FormData();
         form.set("file", file);
-        form.set("imageRedactionConfirmed", String(imagesConfirmed));
         const uploaded = await fetch(`/api/cases/${payload.id}/evidence`, {
           method: "POST",
           body: form,
@@ -91,8 +89,6 @@ export function Workbench() {
               setFiles(nextFiles);
               setSaved(false);
             }}
-            imagesConfirmed={imagesConfirmed}
-            onImagesConfirmedChange={setImagesConfirmed}
           />
           <RedactionPanel
             text={text}

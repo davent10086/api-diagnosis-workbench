@@ -124,7 +124,6 @@ export function CaseWorkbench() {
   const [question, setQuestion] = useState("");
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [metadata, setMetadata] = useState<Metadata>(emptyMetadata);
-  const [autoRedaction] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
@@ -158,12 +157,12 @@ export function CaseWorkbench() {
     const timer = window.setTimeout(() => {
       sessionStorage.setItem(
         "case-workbench-draft",
-        JSON.stringify({ question, metadata, advanced, autoRedaction }),
+        JSON.stringify({ question, metadata, advanced }),
       );
       setDraftStatus("saved");
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [question, metadata, advanced, autoRedaction]);
+  }, [question, metadata, advanced]);
   useEffect(() => {
     if (!preview || isImage(preview.file)) return;
     let alive = true;
@@ -294,7 +293,6 @@ export function CaseWorkbench() {
         size: file.size,
       })),
       advanced,
-      autoRedaction,
     };
     const controller = new AbortController();
     requestController.current = controller;
@@ -314,7 +312,6 @@ export function CaseWorkbench() {
       for (const item of evidence) {
         const form = new FormData();
         form.set("file", item.file);
-        form.set("imageRedactionConfirmed", String(autoRedaction));
         form.set("evidenceType", item.type);
         const uploaded = await fetch(`/api/cases/${result.id}/evidence`, {
           method: "POST",
@@ -473,7 +470,7 @@ export function CaseWorkbench() {
               {showRules && (
                 <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
                   文本预览会遮蔽 Authorization、API Key、Bearer Token、Cookie、Email、IP、Access Key
-                  与 Secret Key。图片保留原图，诊断前需人工确认已脱敏。
+                  与 Secret Key。图片会保留原图并直接用于诊断识别。
                 </p>
               )}
               <div

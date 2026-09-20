@@ -52,7 +52,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: "PNG 文件签名无效。" }, { status: 415 });
   if (file.type === "image/jpeg" && (data[0] !== 255 || data[1] !== 216 || data[2] !== 255))
     return NextResponse.json({ error: "JPEG 文件签名无效。" }, { status: 415 });
-  let redactionStatus = "manual_review_required";
+  // Text is redacted server-side. Images are intentionally retained and made
+  // available to the vision diagnosis flow without a separate confirmation step.
+  let redactionStatus = file.type.startsWith("image/") ? "direct_upload" : "redacted";
   if (file.type === "application/json") {
     try {
       const { redactValue } = await import("@/lib/redaction");
@@ -68,7 +70,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const { redact } = await import("@/lib/redaction");
     data = Buffer.from(redact(data.toString("utf8")), "utf8");
     redactionStatus = "redacted";
-  } else redactionStatus = "redacted";
+  }
   const safeName = basename(file.name).replace(/[^\w.\-]/g, "_");
   const storedName = `${randomUUID()}-${safeName || "evidence"}`;
   try {

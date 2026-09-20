@@ -10,12 +10,14 @@ type Hit = {
   body: string;
   score: number;
 };
+type Meta = { fallbackToAll: boolean; vendorHitCount: number; fallbackHitCount: number; backend: string };
 export function KnowledgeSearch() {
   const [q, setQ] = useState("");
   const [items, setItems] = useState<Hit[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [meta, setMeta] = useState<Meta | null>(null);
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!q.trim()) return;
@@ -27,6 +29,7 @@ export function KnowledgeSearch() {
       const data = await r.json();
       if (!r.ok) throw new Error(data.error);
       setItems(data.items);
+      setMeta(data.meta ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "\u68c0\u7d22\u5931\u8d25\u3002");
     } finally {
@@ -59,6 +62,12 @@ export function KnowledgeSearch() {
       )}
       {!loading && !error && searched && items.length === 0 && (
         <p className="mt-4 text-sm text-muted">未找到匹配的本地文档。可先导入包含该关键词的知识库资料。</p>
+      )}
+      {!loading && !error && searched && meta?.fallbackToAll && (
+        <p className="mt-3 text-sm text-blue-700">供应商内未命中，已回退全库，命中 {meta.fallbackHitCount} 条。</p>
+      )}
+      {!loading && !error && searched && !meta?.fallbackToAll && meta && items.length === 0 && (
+        <p className="mt-3 text-sm text-muted">未命中本地文档（使用 {meta.backend} 检索）。</p>
       )}
       {items.map((x) => (
         <article className="border-b border-slate-200 py-3" key={x.id}>

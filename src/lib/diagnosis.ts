@@ -1,6 +1,6 @@
 import { readFile } from "fs/promises";
 import { join } from "path";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import {
@@ -8,10 +8,11 @@ import {
   cases,
   citations,
   diagnosisRuns,
+  diagnosisWorkflowSteps,
   evidenceAssets,
   ruleFindings,
 } from "@/db/schema";
-import { searchKnowledgeQueries, type KnowledgeHit } from "@/lib/knowledge";
+import { searchKnowledgeQueries } from "@/lib/knowledge";
 import type { Finding, Trace } from "@/lib/types";
 
 const reportTextItem = z.preprocess((value) => {
@@ -62,8 +63,44 @@ type DashScopeResponse = {
 };
 const MAX_MODEL_IMAGES = 5;
 const IMAGE_EXTRACTION_CONCURRENCY = 2;
+type WorkflowNode = "prepare" | "images" | "retrieval" | "model" | "validate_and_persist";
 export class DiagnosisNotFoundError extends Error {}
 export class DiagnosisConflictError extends Error {}
+function workflowSummary(error: unknown) {
+  const message = error instanceof Error ? error.message : "step failed";
+  if (/429|rate limit/i.test(message)) return "upstream rate limited";
+  if (/timeout|abort/i.test(message)) return "upstream timeout or cancellation";
+  if (/network|fetch|ECONN/i.test(message)) return "upstream connection failed";
+  return "step failed";
+}
+async function markWorkflowStep(
+  diagnosisId: string,
+  nodeName: WorkflowNode,
+  status: "running" | "completed" | "failed" | "skipped",
+  summary?: string,
+) {
+  const now = new Date();
+  await db
+    .insert(diagnosisWorkflowSteps)
+    .values({
+      diagnosisId,
+      nodeName,
+      status,
+      attempts: status === "running" ? 1 : 0,
+      ...(status === "running" ? { startedAt: now } : { completedAt: now }),
+      ...(summary ? { summary } : {}),
+    })
+    .onConflictDoUpdate({
+      target: [diagnosisWorkflowSteps.diagnosisId, diagnosisWorkflowSteps.nodeName],
+      set: {
+        status,
+        ...(status === "running"
+          ? { attempts: sql`${diagnosisWorkflowSteps.attempts} + 1`, startedAt: now, completedAt: null }
+          : { completedAt: now }),
+        ...(summary ? { summary } : {}),
+      },
+    });
+}
 export function parseAiReport(raw: string): AiReport {
   return reportSchema.parse(JSON.parse(raw));
 }
@@ -127,7 +164,7 @@ function messageContent(body: DashScopeResponse) {
   }
   throw new Error("Qwen did not return content.");
 }
-async function dashScopeCompletion(
+async function dashScopeAttempt(
   endpoint: "text-generation" | "multimodal-generation",
   model: string,
   messages: unknown[],
@@ -154,6 +191,37 @@ async function dashScopeCompletion(
       `Qwen request failed (HTTP ${response.status}${body.code ? ` / ${body.code}` : ""}): ${body.message || "request rejected"}`,
     );
   return messageContent(body);
+}
+function retryableModelFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  return /HTTP (429|5\d\d)|fetch failed|ECONN|network|timeout/i.test(message);
+}
+async function waitForRetry(delayMs: number, signal?: AbortSignal) {
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, delayMs);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timer);
+      reject(signal.reason instanceof Error ? signal.reason : new DOMException("Request cancelled", "AbortError"));
+    }, { once: true });
+  });
+}
+async function dashScopeCompletion(
+  endpoint: "text-generation" | "multimodal-generation",
+  model: string,
+  messages: unknown[],
+  parameters: Record<string, unknown>,
+  signal?: AbortSignal,
+) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try { return await dashScopeAttempt(endpoint, model, messages, parameters, signal); }
+    catch (error) {
+      lastError = error;
+      if (attempt === 2 || !retryableModelFailure(error) || signal?.aborted) throw error;
+      await waitForRetry(500 * 2 ** attempt + Math.floor(Math.random() * 250), signal);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Qwen request failed.");
 }
 async function extractImage(
   asset: { id: string; filePath: string; extraction: unknown },
@@ -207,14 +275,15 @@ async function extractImage(
     return result;
   }
 }
-function stringTokens(value: unknown) {
-  return (
-    (typeof value === "string" ? value : JSON.stringify(value ?? "")).match(
-      /[A-Za-z][A-Za-z0-9_.-]{2,}/g,
-    ) ?? []
-  );
+type KnowledgeQuery = { value: string; kind: "error" | "status" | "field" | "event" | "model" | "route" | "phrase" | "rule" };
+const sensitive = /(?:authorization|cookie|api[-_]?key|secret|token|password)\s*[:=]/i;
+function strings(value: unknown, output: string[] = []) {
+  if (typeof value === "string") output.push(value);
+  else if (Array.isArray(value)) value.forEach((item) => strings(item, output));
+  else if (value && typeof value === "object") Object.entries(value).forEach(([key, item]) => { output.push(key); strings(item, output); });
+  return output;
 }
-function knowledgeQueries(trace: Trace, findings: Finding[], images: ImageExtraction[]) {
+export function knowledgeQueries(trace: Trace, findings: Finding[], images: ImageExtraction[]): KnowledgeQuery[] {
   const sources: unknown[] = [
     trace.customerQuestion,
     trace.provider,
@@ -230,7 +299,28 @@ function knowledgeQueries(trace: Trace, findings: Finding[], images: ImageExtrac
     ...findings.flatMap((finding) => [finding.ruleId, finding.conclusion, finding.evidence]),
     ...images.flatMap((image) => image.fields ?? []),
   ];
-  return [...new Set(sources.flatMap(stringTokens))];
+  const candidates: KnowledgeQuery[] = [];
+  for (const source of sources) for (const raw of strings(source)) {
+    if (sensitive.test(raw)) continue;
+    const value = raw.slice(0, 200);
+    for (const token of value.match(/\b(?:[45]\d{2}|\d{3,5})\b|\b(?:[A-Z][A-Za-z]+(?:Exception|Error)|[a-z][a-z0-9_]{2,})\b/g) ?? [])
+      candidates.push({ value: token, kind: /^\d+$/.test(token) ? "status" : /(Exception|Error|exceeded|timeout|rate)/i.test(token) ? "error" : "field" });
+    for (const phrase of value.match(/[\u3400-\u9fff]{2,16}/g) ?? []) candidates.push({ value: phrase, kind: "phrase" });
+  }
+  if (trace.model) candidates.push({ value: trace.model, kind: "model" });
+  if (trace.route) candidates.push({ value: trace.route, kind: "route" });
+  for (const event of [...(trace.sse ?? []), ...(trace.logs ?? [])]) {
+    const match = /(?:event\s*[:=]\s*|\bevent\b\s+)([A-Za-z][\w.-]+)/i.exec(event);
+    if (match) candidates.push({ value: match[1], kind: "event" });
+  }
+  for (const finding of findings) candidates.push({ value: finding.ruleId, kind: "rule" });
+  const weight: Record<KnowledgeQuery["kind"], number> = { event: -1, error: 0, status: 1, field: 2, model: 4, route: 5, rule: 6, phrase: 7 };
+  const deduped = new Map<string, KnowledgeQuery>();
+  for (const item of candidates.filter((item) => item.value.length >= 2 && !sensitive.test(item.value))) {
+    const key = item.value.toLowerCase(); const old = deduped.get(key);
+    if (!old || weight[item.kind] < weight[old.kind]) deduped.set(key, item);
+  }
+  return [...deduped.values()].sort((a, b) => weight[a.kind] - weight[b.kind]).slice(0, 8);
 }
 async function readTextEvidence(
   assets: { id: string; filePath: string; evidenceType: string; redactionStatus: string }[],
@@ -302,14 +392,29 @@ export async function runDiagnosis(
     .set({ status: "analyzing", updatedAt: new Date() })
     .where(and(eq(cases.id, caseId), eq(cases.status, "completed")))
     .returning({ id: cases.id });
+  let resumedRunId: string | undefined;
   if (!claimed) {
     const [existing] = await db
-      .select({ id: cases.id })
+      .select({ id: cases.id, status: cases.status })
       .from(cases)
       .where(eq(cases.id, caseId))
       .limit(1);
     if (!existing) throw new DiagnosisNotFoundError("Case not found.");
-    throw new DiagnosisConflictError("Case is not ready or diagnosis is already running.");
+    if (existing.status === "analyzing") {
+      const [running] = await db
+        .select({ id: diagnosisRuns.id })
+        .from(diagnosisRuns)
+        .where(and(eq(diagnosisRuns.caseId, caseId), eq(diagnosisRuns.status, "running")))
+        .orderBy(desc(diagnosisRuns.createdAt))
+        .limit(1);
+      if (running) resumedRunId = running.id;
+    }
+    if (resumedRunId) {
+      // pg-boss may redeliver work after a worker process dies. Reuse the
+      // durable run instead of leaving the case permanently in `analyzing`.
+    } else {
+      throw new DiagnosisConflictError("Case is not ready or diagnosis is already running.");
+    }
   }
   const [trace] = await db.select().from(apiTraces).where(eq(apiTraces.caseId, caseId)).limit(1);
   if (!trace) {
@@ -341,32 +446,55 @@ export async function runDiagnosis(
   ]);
   const textEvidence = await readTextEvidence(assets);
   const model = process.env.QWEN_ANALYSIS_MODEL || "qwen3.7-plus";
-  const run = await db
-    .insert(diagnosisRuns)
-    .values({ caseId, model, reasoningEffort, report: { state: "running" }, status: "running" })
-    .returning({ id: diagnosisRuns.id });
+  const run = resumedRunId
+    ? [{ id: resumedRunId }]
+    : await db
+        .insert(diagnosisRuns)
+        .values({ caseId, model, reasoningEffort, report: { state: "running" }, status: "running" })
+        .returning({ id: diagnosisRuns.id });
+  await markWorkflowStep(
+    run[0].id,
+    "prepare",
+    "completed",
+    resumedRunId ? "resumed after worker interruption" : "case, trace and evidence loaded",
+  );
+  let activeNode: WorkflowNode = "images";
   try {
     const approvedImages = assets.filter(
-      (asset) => asset.redactionStatus === "redacted" && /\.(png|jpe?g)$/i.test(asset.filePath),
+      (asset) =>
+        (asset.redactionStatus === "redacted" || asset.redactionStatus === "direct_upload") &&
+        /\.(png|jpe?g)$/i.test(asset.filePath),
     );
     if (approvedImages.length > MAX_MODEL_IMAGES)
       throw new Error(`At most ${MAX_MODEL_IMAGES} redacted images are allowed.`);
-    const images = await mapWithConcurrency(
-      approvedImages,
-      IMAGE_EXTRACTION_CONCURRENCY,
-      async (asset) => {
-        assertNotAborted(signal);
-        return extractImage(asset, signal);
-      },
+    activeNode = "images";
+    await markWorkflowStep(run[0].id, "images", "running");
+    const images = approvedImages.length
+      ? await mapWithConcurrency(
+          approvedImages,
+          IMAGE_EXTRACTION_CONCURRENCY,
+          async (asset) => {
+            assertNotAborted(signal);
+            return extractImage(asset, signal);
+          },
+        )
+      : [];
+    await markWorkflowStep(
+      run[0].id,
+      "images",
+      approvedImages.length ? "completed" : "skipped",
+      approvedImages.length ? `${approvedImages.length} image(s) processed` : "no supported images",
     );
     const knowledgeQueryList = knowledgeQueries(
       { ...traceInput, logs: [...(traceInput.logs ?? []), ...textEvidence.map((item) => item.content)] },
       findings as Finding[],
       images,
     );
-    const knowledge = await searchKnowledgeQueries(knowledgeQueryList, trace.provider ?? undefined).catch(
-      () => [] as KnowledgeHit[],
-    );
+    activeNode = "retrieval";
+    await markWorkflowStep(run[0].id, "retrieval", "running");
+    const retrieval = await searchKnowledgeQueries(knowledgeQueryList.map((item) => item.value), trace.provider ?? undefined).catch(() => ({ items: [], meta: { vendor: null, fallbackToAll: false, vendorHitCount: 0, fallbackHitCount: 0, backend: "unavailable" as const, error: "search backend unavailable" } }));
+    const knowledge = retrieval.items;
+    await markWorkflowStep(run[0].id, "retrieval", retrieval.meta.backend === "unavailable" ? "skipped" : "completed", retrieval.meta.backend === "unavailable" ? "knowledge search unavailable" : `${knowledge.length} document(s) selected`);
     const similar = await db
       .select({
         id: cases.id,
@@ -415,6 +543,8 @@ export async function runDiagnosis(
       reasoning_effort: reasoningEffort,
       response_format: { type: "json_object" },
     };
+    activeNode = "model";
+    await markWorkflowStep(run[0].id, "model", "running");
     const raw = await dashScopeCompletion(
       "multimodal-generation",
       model,
@@ -442,6 +572,9 @@ export async function runDiagnosis(
       if (!isChineseReport(report))
         throw new Error("Qwen 未返回中文诊断报告，请稍后重试或检查模型配置。");
     }
+    await markWorkflowStep(run[0].id, "model", "completed", "model report received");
+    activeNode = "validate_and_persist";
+    await markWorkflowStep(run[0].id, "validate_and_persist", "running");
     validateEvidence(report, {
       ruleIds: new Set(findings.map((finding) => finding.ruleId)),
       knowledgeIds: new Set(knowledge.slice(0, 5).map((item) => item.id)),
@@ -453,7 +586,7 @@ export async function runDiagnosis(
       await tx
         .update(diagnosisRuns)
         .set({
-          report: { ...report, retrieval: { queryCount: knowledgeQueryList.length, hitCount: knowledge.length } },
+          report: { ...report, retrieval: { queryCount: knowledgeQueryList.length, queryKinds: Object.fromEntries(knowledgeQueryList.reduce((counts, item) => counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1), new Map<string, number>())), vendor: retrieval.meta.vendor, vendorHitCount: retrieval.meta.vendorHitCount, fallbackToAll: retrieval.meta.fallbackToAll, fallbackHitCount: retrieval.meta.fallbackHitCount, finalDocumentCount: knowledge.length, backend: retrieval.meta.backend, ...(retrieval.meta.error ? { error: retrieval.meta.error } : {}) } },
           durationMs: Date.now() - started,
           status: "completed",
         })
@@ -481,6 +614,7 @@ export async function runDiagnosis(
         }));
       if (refs.length) await tx.insert(citations).values(refs);
     });
+    await markWorkflowStep(run[0].id, "validate_and_persist", "completed", "report and citations saved");
     return { runId: run[0].id, report };
   } catch (error) {
     const cancelled =
@@ -490,6 +624,7 @@ export async function runDiagnosis(
       : error instanceof Error
         ? error.message
         : "AI diagnosis failed.";
+    await markWorkflowStep(run[0].id, activeNode, "failed", workflowSummary(error)).catch(() => undefined);
     await db.transaction(async (tx) => {
       await tx
         .update(diagnosisRuns)

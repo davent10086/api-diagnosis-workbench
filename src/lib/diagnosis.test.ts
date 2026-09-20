@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { knowledgeCitationIds, parseAiReport } from "./diagnosis";
+import { knowledgeCitationIds, knowledgeQueries, parseAiReport } from "./diagnosis";
 import { normalizeKnowledgeVendor } from "./knowledge";
 
 const report = {
@@ -29,6 +29,8 @@ describe("parseAiReport", () => {
 describe("knowledge vendor normalization", () => {
   it("normalizes provider names before filtering the knowledge base", () => {
     expect(normalizeKnowledgeVendor(" Anthropic ")).toBe("anthropic");
+    expect(normalizeKnowledgeVendor("Gemini")).toBe("google gemini");
+    expect(normalizeKnowledgeVendor("bedrock/claude")).toBe("aws");
   });
 });
 
@@ -40,5 +42,26 @@ describe("knowledge citations", () => {
 
   it("rejects malformed knowledge references instead of storing arbitrary text as an id", () => {
     expect([...knowledgeCitationIds(["knowledge:not-a-uuid 说明"])]).toEqual([]);
+  });
+});
+
+describe("knowledge query extraction", () => {
+  it("prioritizes diagnostic tokens while retaining Chinese phrases and excluding credentials", () => {
+    const queries = knowledgeQueries(
+      {
+        customerQuestion: "调用超时，出现 ValidationException 和 context_length_exceeded",
+        statusCode: 429,
+        model: "gpt-4.1-mini",
+        route: "/v1/chat/completions",
+        logs: ["Authorization: Bearer secret-value", "event: message_start"],
+      },
+      [{ ruleId: "http-429", severity: "high", faultLayer: "provider", conclusion: "限流", evidence: [], needsMoreEvidence: false }],
+      [],
+    );
+    expect(queries.map((item) => item.value)).toContain("429");
+    expect(queries.map((item) => item.value)).toContain("ValidationException");
+    expect(queries.map((item) => item.value)).toContain("context_length_exceeded");
+    expect(queries.map((item) => item.value)).toContain("message_start");
+    expect(queries.map((item) => item.value).join(" ")).not.toContain("secret-value");
   });
 });

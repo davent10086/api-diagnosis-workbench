@@ -43,6 +43,24 @@ export const ruleCatalog = [
     severity: "high",
   },
   {
+    id: "openai-parameter-compatibility",
+    name: "OpenAI 参数兼容性",
+    description: "识别 OpenAI 上游明确返回的不支持参数或参数值。",
+    severity: "high",
+  },
+  {
+    id: "gemini-safety-block",
+    name: "Gemini 安全拦截",
+    description: "识别成功 HTTP 响应中被 Gemini 安全策略阻止的生成。",
+    severity: "medium",
+  },
+  {
+    id: "context-window-exceeded",
+    name: "上下文窗口超限",
+    description: "识别上游明确返回的上下文或输入 token 超限。",
+    severity: "high",
+  },
+  {
     id: "tool-lifecycle",
     name: "工具调用生命周期",
     description: "检查 tool_result 是否缺少对应 tool_use。",
@@ -178,6 +196,48 @@ export function runRules(t: Trace): Finding[] {
         "adapter",
         "Bedrock 路由携带 web_search_20250305，且上游返回 ValidationException，工具能力不兼容。",
         ["route=bedrock", "web_search_20250305", "ValidationException"],
+        false,
+      ),
+    );
+  const provider = `${t.provider ?? ""} ${t.route ?? ""}`.toLowerCase();
+  const upstreamText = JSON.stringify(t.upstreamResponse ?? t.finalResponse ?? {});
+  if (
+    provider.includes("openai") &&
+    /unsupported_parameter|unsupported_value|unknown parameter/i.test(upstreamText)
+  )
+    out.push(
+      f(
+        "openai-parameter-compatibility",
+        "high",
+        "adapter",
+        "OpenAI 上游明确返回不支持的参数或参数值，请核对中转请求转换。",
+        ["provider=openai", upstreamText.slice(0, 500)],
+        false,
+      ),
+    );
+  if (
+    (provider.includes("gemini") || provider.includes("google")) &&
+    t.statusCode === 200 &&
+    /"(?:finishReason|finish_reason)"\s*:\s*"SAFETY"|\bSAFETY\b/i.test(upstreamText)
+  )
+    out.push(
+      f(
+        "gemini-safety-block",
+        "medium",
+        "provider",
+        "Gemini 返回成功 HTTP 状态但生成被安全策略拦截。",
+        ["status_code=200", "finishReason=SAFETY"],
+        false,
+      ),
+    );
+  if (/context_length_exceeded|maximum context length|input is too long|too many tokens/i.test(upstreamText))
+    out.push(
+      f(
+        "context-window-exceeded",
+        "high",
+        "provider",
+        "上游明确返回上下文窗口或输入 token 超限。",
+        [upstreamText.slice(0, 500)],
         false,
       ),
     );

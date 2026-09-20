@@ -8,6 +8,7 @@ import {
   real,
   boolean,
   index,
+  uniqueIndex,
   customType,
 } from "drizzle-orm/pg-core";
 const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
@@ -130,6 +131,25 @@ export const citations = pgTable(
     excerpt: text("excerpt"),
   },
   (t) => [index("citations_diagnosis_idx").on(t.diagnosisId)],
+);
+export const diagnosisWorkflowSteps = pgTable(
+  "diagnosis_workflow_steps",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    diagnosisId: uuid("diagnosis_id")
+      .references(() => diagnosisRuns.id)
+      .notNull(),
+    nodeName: text("node_name").notNull(),
+    status: text("status").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    summary: text("summary"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("diagnosis_workflow_steps_run_node_idx").on(t.diagnosisId, t.nodeName),
+    index("diagnosis_workflow_steps_diagnosis_idx").on(t.diagnosisId),
+  ],
 );
 export const documentChunks = pgTable(
   "document_chunks",

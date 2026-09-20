@@ -3,12 +3,12 @@
 import { ChangeEvent, DragEvent, useState } from "react";
 import { FileUp, Trash2 } from "lucide-react";
 
-type Props = { files: File[]; onChange: (files: File[]) => void; imagesConfirmed?: boolean; onImagesConfirmedChange?: (value: boolean) => void };
+type Props = { files: File[]; onChange: (files: File[]) => void };
 const accepted = "image/png,image/jpeg,.json,.txt,text/plain,application/json";
 const MAX_BYTES = 10 * 1024 * 1024;
 const allowedTypes = new Set(["application/json", "text/plain", "image/png", "image/jpeg"]);
 
-export function EvidenceUploader({ files, onChange, imagesConfirmed = false, onImagesConfirmedChange }: Props) {
+export function EvidenceUploader({ files, onChange }: Props) {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState("");
   const addFiles = (next: File[]) => {
@@ -53,12 +53,6 @@ export function EvidenceUploader({ files, onChange, imagesConfirmed = false, onI
         />
       </label>
       {error && <p className="mt-2 text-sm text-red-700" role="alert">{error}</p>}
-      {files.some((file) => file.type.startsWith("image/")) && onImagesConfirmedChange && (
-        <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg bg-amber-50 p-2 text-xs leading-5 text-amber-800">
-          <input className="mt-1" type="checkbox" checked={imagesConfirmed} onChange={(event) => onImagesConfirmedChange(event.target.checked)} />
-          我已确认所有截图不含密钥、Cookie、个人信息或其他敏感数据；允许将其发送至千问进行识别。
-        </label>
-      )}
       {files.map((file) => (
         <p
           className="mt-2 flex justify-between rounded bg-slate-50 p-2 text-sm"
