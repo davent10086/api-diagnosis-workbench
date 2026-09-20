@@ -275,7 +275,7 @@ export function CaseWorkbench() {
     }
   }
 
-  async function mockAction(action: "draft" | "diagnosis") {
+  async function submitCase(action: "draft" | "diagnosis") {
     if (submitting) return;
     if (action === "diagnosis" && !question.trim() && evidence.length === 0) {
       setToast("请填写客户问题，或至少添加 1 条证据后再开始诊断。");
@@ -352,12 +352,6 @@ export function CaseWorkbench() {
       requestController.current = null;
       setSubmitting(null);
     }
-    console.info(`[mock] ${action === "draft" ? "save draft" : "start diagnosis"}`, payload);
-    setToast(
-      action === "draft"
-        ? "草稿已在本地工作台保存（Mock）。"
-        : "诊断任务已创建（Mock，未调用模型 API）。",
-    );
   }
 
   const completeness = [
@@ -393,7 +387,7 @@ export function CaseWorkbench() {
             <button
               className="btn hidden sm:inline-flex"
               disabled={Boolean(submitting)}
-              onClick={() => mockAction("draft")}
+              onClick={() => submitCase("draft")}
             >
               <Save size={15} />
               {submitting === "draft" ? "保存中…" : "保存草稿"}
@@ -681,7 +675,7 @@ export function CaseWorkbench() {
             <button
               className="btn sm:hidden"
               disabled={Boolean(submitting)}
-              onClick={() => mockAction("draft")}
+              onClick={() => submitCase("draft")}
             >
               <Save size={15} />
               草稿
@@ -689,7 +683,7 @@ export function CaseWorkbench() {
             <button
               className="btn btn-primary"
               disabled={Boolean(submitting)}
-              onClick={() => mockAction("diagnosis")}
+              onClick={() => submitCase("diagnosis")}
             >
               <ShieldCheck size={15} />
               {submitting === "diagnosis" ? "正在提交…" : "开始诊断"}
