@@ -5,6 +5,7 @@ import { apiTraces, cases, ruleFindings } from "@/db/schema";
 import { runRules } from "@/lib/rules";
 import { buildReport } from "@/lib/report";
 import { redactTrace } from "@/lib/redaction";
+import { deleteCases } from "@/lib/delete-cases";
 
 const shortString = z.string().max(10_000);
 const traceSchema = z
@@ -94,5 +95,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ id: result.id, findings, report }, { status: 201 });
   } catch {
     return NextResponse.json({ error: "无法保存案件，请确认数据库迁移已完成。" }, { status: 503 });
+  }
+}
+
+export async function DELETE() {
+  try {
+    const items = await db.select({ id: cases.id }).from(cases);
+    await deleteCases(items.map((item) => item.id));
+    return NextResponse.json({ deleted: items.length });
+  } catch {
+    return NextResponse.json({ error: "Unable to clear cases." }, { status: 503 });
   }
 }

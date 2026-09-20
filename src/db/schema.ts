@@ -11,16 +11,20 @@ import {
   customType,
 } from "drizzle-orm/pg-core";
 const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
-export const cases = pgTable("cases", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  title: text("title").notNull(),
-  status: text("status").notNull().default("draft"),
-  summary: text("summary"),
-  finalConclusion: text("final_conclusion"),
-  confidence: real("confidence"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+export const cases = pgTable(
+  "cases",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    title: text("title").notNull(),
+    status: text("status").notNull().default("draft"),
+    summary: text("summary"),
+    finalConclusion: text("final_conclusion"),
+    confidence: real("confidence"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("cases_status_updated_idx").on(t.status, t.updatedAt)],
+);
 export const evidenceAssets = pgTable(
   "evidence_assets",
   {
@@ -80,41 +84,53 @@ export const extractedFields = pgTable("extracted_fields", {
   sourceCoordinates: jsonb("source_coordinates"),
   humanEdited: boolean("human_edited").default(false),
 });
-export const ruleFindings = pgTable("rule_findings", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  caseId: uuid("case_id")
-    .references(() => cases.id)
-    .notNull(),
-  ruleId: text("rule_id").notNull(),
-  severity: text("severity").notNull(),
-  faultLayer: text("fault_layer").notNull(),
-  evidence: jsonb("evidence"),
-  conclusion: text("conclusion").notNull(),
-  needsMoreEvidence: boolean("needs_more_evidence").default(false),
-});
-export const diagnosisRuns = pgTable("diagnosis_runs", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  caseId: uuid("case_id")
-    .references(() => cases.id)
-    .notNull(),
-  model: text("model"),
-  reasoningEffort: text("reasoning_effort"),
-  report: jsonb("report").notNull(),
-  durationMs: integer("duration_ms"),
-  status: text("status").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-export const citations = pgTable("citations", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  diagnosisId: uuid("diagnosis_id")
-    .references(() => diagnosisRuns.id)
-    .notNull(),
-  title: text("title").notNull(),
-  url: text("url").notNull(),
-  vendor: text("vendor"),
-  category: text("category"),
-  excerpt: text("excerpt"),
-});
+export const ruleFindings = pgTable(
+  "rule_findings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    caseId: uuid("case_id")
+      .references(() => cases.id)
+      .notNull(),
+    ruleId: text("rule_id").notNull(),
+    severity: text("severity").notNull(),
+    faultLayer: text("fault_layer").notNull(),
+    evidence: jsonb("evidence"),
+    conclusion: text("conclusion").notNull(),
+    needsMoreEvidence: boolean("needs_more_evidence").default(false),
+  },
+  (t) => [index("rule_findings_case_idx").on(t.caseId)],
+);
+export const diagnosisRuns = pgTable(
+  "diagnosis_runs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    caseId: uuid("case_id")
+      .references(() => cases.id)
+      .notNull(),
+    model: text("model"),
+    reasoningEffort: text("reasoning_effort"),
+    report: jsonb("report").notNull(),
+    durationMs: integer("duration_ms"),
+    status: text("status").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("diagnosis_runs_case_created_idx").on(t.caseId, t.createdAt)],
+);
+export const citations = pgTable(
+  "citations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    diagnosisId: uuid("diagnosis_id")
+      .references(() => diagnosisRuns.id)
+      .notNull(),
+    title: text("title").notNull(),
+    url: text("url").notNull(),
+    vendor: text("vendor"),
+    category: text("category"),
+    excerpt: text("excerpt"),
+  },
+  (t) => [index("citations_diagnosis_idx").on(t.diagnosisId)],
+);
 export const documentChunks = pgTable(
   "document_chunks",
   {
