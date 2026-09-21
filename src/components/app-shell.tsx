@@ -1,12 +1,13 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, BookOpen, FileText, Settings, ShieldCheck } from "lucide-react";
+import { Activity, BookOpen, FileText, Settings, ShieldCheck, ChartNoAxesCombined } from "lucide-react";
 
 const navigation = [
   ["案件", "/cases", FileText],
   ["知识库", "/knowledge", BookOpen],
   ["规则中心", "/rules", Activity],
+  ["诊断质量", "/quality", ChartNoAxesCombined],
   ["设置", "/settings", Settings],
 ] as const;
 

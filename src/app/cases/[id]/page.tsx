@@ -6,6 +6,7 @@ import { DiagnosisRunner } from "@/components/diagnosis-runner";
 import { db } from "@/db/client";
 import { DeleteCaseButton } from "@/components/delete-case-button";
 import { DiagnosisLiveRefresh } from "@/components/diagnosis-live-refresh";
+import { DiagnosisReview } from "@/components/diagnosis-review";
 import {
   apiTraces,
   cases,
@@ -128,14 +129,18 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
                 <p className="mt-2 text-sm text-blue-800">
                   置信度 {String(aiReport.confidence)}% · {String(aiReport.fault_layer)}
                 </p>
+                <p className="mt-1 text-sm font-semibold text-blue-800">
+                  结论状态：{String(aiReport.conclusion_status ?? "provisional") === "confirmed" ? "已确认" : String(aiReport.conclusion_status ?? "provisional") === "insufficient" ? "证据不足" : "初步判断，待人工确认"}
+                </p>
               </div>
               <div>
-                <h3 className="font-semibold">根因判断</h3>
+                <h3 className="font-semibold">{String(aiReport.conclusion_status) === "confirmed" ? "根因判断" : "候选原因"}</h3>
                 <p className="mt-2 text-sm leading-6 text-slate-700">
                   {String(aiReport.root_cause)}
                 </p>
               </div>
               <ReportList title="已确认的证据" items={aiReport.confirmed_evidence} />
+              <ReportList title="确认阻断项" items={aiReport.confirmation_blockers} />
               <ReportList title="待验证假设" items={aiReport.hypotheses} />
               <ReportList title="缺失证据" items={aiReport.missing_evidence} />
               <ReportList title="下一步操作" items={aiReport.next_actions} />
@@ -145,6 +150,8 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
                   {String(aiReport.customer_message)}
                 </p>
               </div>
+              <EvidenceLedger items={aiReport.evidence_ledger} />
+              <DiagnosisReview caseId={id} diagnosisId={latestRun.id} />
               {runCitations.length > 0 && (
                 <div>
                   <h3 className="text-sm font-semibold">官方资料引用</h3>
@@ -197,6 +204,17 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
       </div>
     </Shell>
   );
+}
+
+function EvidenceLedger({ items }: { items: unknown }) {
+  const values = Array.isArray(items) ? items as { id?: unknown; kind?: unknown; statement?: unknown }[] : [];
+  if (!values.length) return null;
+  return <div>
+    <h3 className="text-sm font-semibold">证据账本</h3>
+    <ul className="mt-2 divide-y divide-slate-100 rounded border border-slate-100">
+      {values.map((item, index) => <li className="p-2 text-xs text-slate-700" key={`${String(item.id)}-${index}`}><b>{String(item.kind)}</b> · {String(item.id)}<br />{String(item.statement)}</li>)}
+    </ul>
+  </div>;
 }
 
 function ReportList({ title, items }: { title: string; items: unknown }) {

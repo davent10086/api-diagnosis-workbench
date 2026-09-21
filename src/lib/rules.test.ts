@@ -2,6 +2,30 @@ import { describe, it, expect } from "vitest";
 import { runRules } from "./rules";
 import type { Trace } from "./types";
 describe("P0 规则", () => {
+  it("identifies Bedrock's deprecated temperature parameter from raw response text", () => {
+    const findings = runRules({
+      route: "bedrock",
+      statusCode: 400,
+      upstreamResponse: {
+        raw_response:
+          "InvokeModelWithResponseStream: StatusCode: 400, ValidationException: `temperature` is deprecated for this model.",
+      },
+    });
+    const finding = findings.find((item) => item.ruleId === "bedrock-deprecated-temperature");
+    expect(finding?.faultLayer).toBe("provider");
+    expect(finding?.needsMoreEvidence).toBe(false);
+  });
+
+  it("does not show a cache evidence prompt for an unrelated request", () => {
+    const findings = runRules({ statusCode: 400, logs: ["ValidationException: temperature is deprecated"] });
+    expect(findings.some((item) => item.ruleId === "cache-evidence")).toBe(false);
+  });
+
+  it("shows a cache evidence prompt only for a cache investigation without cache headers", () => {
+    const findings = runRules({ logs: ["请确认是否发生缓存未命中"] });
+    expect(findings.some((item) => item.ruleId === "cache-evidence")).toBe(true);
+  });
+
   it("识别 Bedrock 工具不兼容", () => {
     const r = runRules({
       route: "bedrock",

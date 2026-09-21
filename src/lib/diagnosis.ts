@@ -1,6 +1,6 @@
 import { readFile } from "fs/promises";
 import { join } from "path";
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import {
@@ -13,6 +13,8 @@ import {
   ruleFindings,
 } from "@/db/schema";
 import { searchKnowledgeQueries } from "@/lib/knowledge";
+import { adjudicateReport, buildEvidenceLedger } from "@/lib/diagnosis-quality";
+import { runRules } from "@/lib/rules";
 import type { Finding, Trace } from "@/lib/types";
 
 const reportTextItem = z.preprocess((value) => {
@@ -63,7 +65,7 @@ type DashScopeResponse = {
 };
 const MAX_MODEL_IMAGES = 5;
 const IMAGE_EXTRACTION_CONCURRENCY = 2;
-type WorkflowNode = "prepare" | "images" | "retrieval" | "model" | "validate_and_persist";
+type WorkflowNode = "prepare" | "images" | "retrieval" | "model" | "adjudicate" | "validate_and_persist";
 export class DiagnosisNotFoundError extends Error {}
 export class DiagnosisConflictError extends Error {}
 function workflowSummary(error: unknown) {
@@ -255,9 +257,21 @@ async function extractImage(
       signal,
     );
     const parsed = z
-      .object({ summary: z.string().max(3000), fields: z.array(z.string().max(500)).max(30) })
+      .object({
+        summary: z.string().max(3000),
+        fields: z.union([
+          z.array(z.string().max(500)).max(30),
+          z.record(z.union([z.string(), z.number(), z.boolean()])).refine(
+            (value) => Object.keys(value).length <= 30,
+            "too many fields",
+          ),
+        ]),
+      })
       .parse(JSON.parse(content));
-    const result: ImageExtraction = { status: "completed", ...parsed };
+    const fields = Array.isArray(parsed.fields)
+      ? parsed.fields
+      : Object.entries(parsed.fields).map(([key, value]) => `${key}=${String(value).slice(0, 450)}`);
+    const result: ImageExtraction = { status: "completed", summary: parsed.summary, fields };
     await db
       .update(evidenceAssets)
       .set({ extraction: result })
@@ -440,11 +454,28 @@ export async function runDiagnosis(
     logs: trace.logs as string[] | undefined,
     sse: trace.sse as string[] | undefined,
   };
-  const [assets, findings] = await Promise.all([
-    db.select().from(evidenceAssets).where(eq(evidenceAssets.caseId, caseId)),
-    db.select().from(ruleFindings).where(eq(ruleFindings.caseId, caseId)),
-  ]);
+  const assets = await db.select().from(evidenceAssets).where(eq(evidenceAssets.caseId, caseId));
   const textEvidence = await readTextEvidence(assets);
+  const enrichedTrace: Trace = {
+    ...traceInput,
+    logs: [...(traceInput.logs ?? []), ...textEvidence.map((item) => item.content)],
+  };
+  const allFindings = runRules(enrichedTrace);
+  await db.transaction(async (tx) => {
+    await tx.delete(ruleFindings).where(eq(ruleFindings.caseId, caseId));
+    if (allFindings.length)
+      await tx.insert(ruleFindings).values(
+        allFindings.map((finding) => ({
+          caseId,
+          ruleId: finding.ruleId,
+          severity: finding.severity,
+          faultLayer: finding.faultLayer,
+          evidence: finding.evidence,
+          conclusion: finding.conclusion,
+          needsMoreEvidence: finding.needsMoreEvidence,
+        })),
+      );
+  });
   const model = process.env.QWEN_ANALYSIS_MODEL || "qwen3.7-plus";
   const run = resumedRunId
     ? [{ id: resumedRunId }]
@@ -479,36 +510,34 @@ export async function runDiagnosis(
           },
         )
       : [];
+    const successfulImages = approvedImages.flatMap((asset, index) => {
+      const extraction = images[index];
+      return extraction?.status === "completed" ? [{ id: asset.id, ...extraction }] : [];
+    });
+    const failedImageCount = images.filter((image) => image.status === "failed").length;
     await markWorkflowStep(
       run[0].id,
       "images",
       approvedImages.length ? "completed" : "skipped",
-      approvedImages.length ? `${approvedImages.length} image(s) processed` : "no supported images",
+      approvedImages.length
+        ? `${successfulImages.length} image(s) extracted${failedImageCount ? `; ${failedImageCount} failed and excluded from diagnosis` : ""}`
+        : "no supported images",
     );
     const knowledgeQueryList = knowledgeQueries(
-      { ...traceInput, logs: [...(traceInput.logs ?? []), ...textEvidence.map((item) => item.content)] },
-      findings as Finding[],
-      images,
+      enrichedTrace,
+      allFindings as Finding[],
+      successfulImages,
     );
     activeNode = "retrieval";
     await markWorkflowStep(run[0].id, "retrieval", "running");
     const retrieval = await searchKnowledgeQueries(knowledgeQueryList.map((item) => item.value), trace.provider ?? undefined).catch(() => ({ items: [], meta: { vendor: null, fallbackToAll: false, vendorHitCount: 0, fallbackHitCount: 0, backend: "unavailable" as const, error: "search backend unavailable" } }));
     const knowledge = retrieval.items;
     await markWorkflowStep(run[0].id, "retrieval", retrieval.meta.backend === "unavailable" ? "skipped" : "completed", retrieval.meta.backend === "unavailable" ? "knowledge search unavailable" : `${knowledge.length} document(s) selected`);
-    const similar = await db
-      .select({
-        id: cases.id,
-        title: cases.title,
-        summary: cases.summary,
-        conclusion: cases.finalConclusion,
-      })
-      .from(cases)
-      .where(and(ne(cases.id, caseId), eq(cases.status, "completed")))
-      .orderBy(desc(cases.updatedAt))
-      .limit(5);
+    // Historical model conclusions are not evidence. Do not feed them back into
+    // a new diagnosis, otherwise one wrong conclusion can anchor later cases.
     const prompt = {
       trace: traceInput,
-      rules: findings.map(
+      rules: allFindings.map(
         ({ ruleId, severity, faultLayer, evidence, conclusion, needsMoreEvidence }) => ({
           ruleId,
           severity,
@@ -518,7 +547,7 @@ export async function runDiagnosis(
           needsMoreEvidence,
         }),
       ),
-      imageEvidence: images.map((image, index) => ({ id: approvedImages[index].id, ...image })),
+      imageEvidence: successfulImages,
       textEvidence,
       knowledge: knowledge.slice(0, 5).map((x) => ({
         id: x.id,
@@ -526,9 +555,9 @@ export async function runDiagnosis(
         url: x.sourceUrl,
         excerpt: x.body.slice(0, 1200),
       })),
-      similarCases: similar,
+      evidenceLedger: buildEvidenceLedger(traceInput, allFindings, textEvidence, successfulImages),
       instructions:
-        "仅依据所提供的证据进行诊断，不能将推测写成已确认的根因。summary、root_cause、confirmed_evidence 中的说明、hypotheses、missing_evidence、next_actions 和 customer_message 的所有可读文本必须使用简体中文。错误码、请求 ID、Trace ID、模型名、API 字段名、URL、引用的原始日志片段和证据引用前缀必须保持原样。confirmed_evidence 必须使用 rule:<id>、trace:<field>、image:<id>、text:<id> 或 knowledge:<id> 形式的引用；knowledge 引用可在 ID 后附中文说明。若知识库内容直接支持根因或下一步操作，必须包含对应 knowledge:<id> 引用。缺少证据支撑的结论必须写入 hypotheses。confirmed_evidence、hypotheses、missing_evidence 和 next_actions 中的每一项都必须是纯字符串，不能是对象。仅输出 JSON，字段为 summary、root_cause、confidence、severity、fault_layer、confirmed_evidence、hypotheses、missing_evidence、next_actions、customer_message。",
+        "仅依据所提供的证据进行诊断，不能将推测写成已确认的根因。所有 needsMoreEvidence 规则都是确认阻断项，必须在 missing_evidence 中说明。文本、截图和知识库片段只能支持候选，除非存在对应的确定性 rule 证据。必须至少提出一个替代解释；无法排除时写入 hypotheses。summary、root_cause、confirmed_evidence 中的说明、hypotheses、missing_evidence、next_actions 和 customer_message 的所有可读文本必须使用简体中文。错误码、请求 ID、Trace ID、模型名、API 字段名、URL、引用的原始日志片段和证据引用前缀必须保持原样。confirmed_evidence 必须使用 rule:<id>、trace:<field>、image:<id>、text:<id> 或 knowledge:<id> 形式的引用；knowledge 引用可在 ID 后附中文说明。缺少证据支撑的结论必须写入 hypotheses。confirmed_evidence、hypotheses、missing_evidence 和 next_actions 中的每一项都必须是纯字符串，不能是对象。仅输出 JSON，字段为 summary、root_cause、confidence、severity、fault_layer、confirmed_evidence、hypotheses、missing_evidence、next_actions、customer_message。",
     };
     const messages = [
       {
@@ -576,17 +605,26 @@ export async function runDiagnosis(
     activeNode = "validate_and_persist";
     await markWorkflowStep(run[0].id, "validate_and_persist", "running");
     validateEvidence(report, {
-      ruleIds: new Set(findings.map((finding) => finding.ruleId)),
+      ruleIds: new Set(allFindings.map((finding) => finding.ruleId)),
       knowledgeIds: new Set(knowledge.slice(0, 5).map((item) => item.id)),
-      imageIds: new Set(approvedImages.map((asset) => asset.id)),
+      imageIds: new Set(successfulImages.map((image) => image.id)),
       textEvidenceIds: new Set(textEvidence.map((item) => item.id)),
       traceReferences: traceReferenceSet(traceInput),
     });
+    activeNode = "adjudicate";
+    await markWorkflowStep(run[0].id, "adjudicate", "running");
+    const adjudication = adjudicateReport(report, allFindings);
+    await markWorkflowStep(
+      run[0].id,
+      "adjudicate",
+      "completed",
+      `${adjudication.conclusionStatus}; ${adjudication.blockers.length} confirmation blocker(s)`,
+    );
     await db.transaction(async (tx) => {
       await tx
         .update(diagnosisRuns)
         .set({
-          report: { ...report, retrieval: { queryCount: knowledgeQueryList.length, queryKinds: Object.fromEntries(knowledgeQueryList.reduce((counts, item) => counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1), new Map<string, number>())), vendor: retrieval.meta.vendor, vendorHitCount: retrieval.meta.vendorHitCount, fallbackToAll: retrieval.meta.fallbackToAll, fallbackHitCount: retrieval.meta.fallbackHitCount, finalDocumentCount: knowledge.length, backend: retrieval.meta.backend, ...(retrieval.meta.error ? { error: retrieval.meta.error } : {}) } },
+          report: { ...report, customer_message: adjudication.customerMessage, conclusion_status: adjudication.conclusionStatus, confirmation_blockers: adjudication.blockers, evidence_ledger: buildEvidenceLedger(traceInput, allFindings, textEvidence, successfulImages), retrieval: { queryCount: knowledgeQueryList.length, queryKinds: Object.fromEntries(knowledgeQueryList.reduce((counts, item) => counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1), new Map<string, number>())), vendor: retrieval.meta.vendor, vendorHitCount: retrieval.meta.vendorHitCount, fallbackToAll: retrieval.meta.fallbackToAll, fallbackHitCount: retrieval.meta.fallbackHitCount, finalDocumentCount: knowledge.length, backend: retrieval.meta.backend, ...(retrieval.meta.error ? { error: retrieval.meta.error } : {}) } },
           durationMs: Date.now() - started,
           status: "completed",
         })
@@ -596,7 +634,7 @@ export async function runDiagnosis(
         .set({
           status: "completed",
           summary: report.summary,
-          finalConclusion: report.root_cause,
+          finalConclusion: adjudication.conclusionStatus === "confirmed" ? report.root_cause : "初步诊断，待人工确认。",
           confidence: report.confidence / 100,
           updatedAt: new Date(),
         })

@@ -151,6 +151,20 @@ export const diagnosisWorkflowSteps = pgTable(
     index("diagnosis_workflow_steps_diagnosis_idx").on(t.diagnosisId),
   ],
 );
+export const diagnosisReviews = pgTable(
+  "diagnosis_reviews",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    diagnosisId: uuid("diagnosis_id")
+      .references(() => diagnosisRuns.id)
+      .notNull(),
+    verdict: text("verdict").notNull(),
+    correctedRootCause: text("corrected_root_cause"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("diagnosis_reviews_diagnosis_idx").on(t.diagnosisId)],
+);
 export const documentChunks = pgTable(
   "document_chunks",
   {

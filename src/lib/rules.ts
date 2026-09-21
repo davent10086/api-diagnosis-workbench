@@ -1,6 +1,12 @@
 import type { Finding, Trace } from "./types";
 export const ruleCatalog = [
   {
+    id: "bedrock-deprecated-temperature",
+    name: "Bedrock 已废弃 temperature 参数",
+    description: "识别 Bedrock 对已废弃 temperature 参数返回的 ValidationException。",
+    severity: "high",
+  },
+  {
     id: "http-429",
     name: "HTTP 429 重试证据",
     description: "检查限流响应是否包含重试上下文。",
@@ -84,6 +90,14 @@ const f = (
 export function runRules(t: Trace): Finding[] {
   const out: Finding[] = [];
   const logs = (t.logs ?? []).join("\n");
+  const allTraceText = JSON.stringify({
+    customerQuestion: t.customerQuestion,
+    clientRequest: t.clientRequest,
+    transformedRequest: t.transformedRequest,
+    upstreamResponse: t.upstreamResponse,
+    finalResponse: t.finalResponse,
+    logs: t.logs,
+  });
   const sse = t.sse ?? [];
   if (t.statusCode === 429)
     out.push(
@@ -202,6 +216,23 @@ export function runRules(t: Trace): Finding[] {
   const provider = `${t.provider ?? ""} ${t.route ?? ""}`.toLowerCase();
   const upstreamText = JSON.stringify(t.upstreamResponse ?? t.finalResponse ?? {});
   if (
+    (provider.includes("bedrock") || /bedrock|invokemodelwithresponsestream/i.test(allTraceText)) &&
+    /temperature[^a-z]{0,20}(?:is\s+)?deprecated|deprecated[^\n]{0,120}temperature/i.test(allTraceText)
+  )
+    out.push(
+      f(
+        "bedrock-deprecated-temperature",
+        "high",
+        "provider",
+        "Bedrock 明确拒绝请求：当前模型已不再支持 temperature 参数。",
+        [
+          ...(t.statusCode ? [`status_code=${t.statusCode}`] : []),
+          allTraceText.match(/.{0,80}temperature.{0,160}/i)?.[0] ?? "temperature is deprecated",
+        ],
+        false,
+      ),
+    );
+  if (
     provider.includes("openai") &&
     /unsupported_parameter|unsupported_value|unknown parameter/i.test(upstreamText)
   )
@@ -253,17 +284,21 @@ export function runRules(t: Trace): Finding[] {
         false,
       ),
     );
-  if (
-    !JSON.stringify(a).includes("cache") &&
-    !JSON.stringify(t.upstreamResponse ?? {}).includes("cache")
-  )
+  const cacheInvestigation = /(?:cache[_\s-]?(?:control|status|key|hit|miss)|缓存)/i.test(
+    allTraceText,
+  );
+  const cacheEvidencePresent =
+    /(?:cache-control|cf-cache-status|x-cache|\bage\b|\betag\b|\bvary\b|cache[_\s-]?(?:hit|miss|status))/i.test(
+      allTraceText,
+    );
+  if (cacheInvestigation && !cacheEvidencePresent)
     out.push(
       f(
         "cache-evidence",
         "low",
         "unknown",
-        "缓存证据不足，无法确认 cache miss。",
-        ["未找到可比较请求、缓存字段或 usage"],
+        "存在缓存排障上下文，但缺少缓存命中状态或响应头，暂不能判断 cache hit/miss。",
+        ["请补充 Cache-Control、Age、ETag、Vary、X-Cache 或 CF-Cache-Status。"],
         true,
       ),
     );

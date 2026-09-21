@@ -71,6 +71,13 @@
       "when": 1790300000000,
       "tag": "0009_diagnosis_workflow_steps",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790400000000,
+      "tag": "0010_diagnosis_reviews",
+      "breakpoints": true
     }
   ]
 }
