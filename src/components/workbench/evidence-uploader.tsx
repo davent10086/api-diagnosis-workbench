@@ -4,9 +4,9 @@ import { ChangeEvent, DragEvent, useState } from "react";
 import { FileUp, Trash2 } from "lucide-react";
 
 type Props = { files: File[]; onChange: (files: File[]) => void };
-const accepted = "image/png,image/jpeg,.json,.txt,text/plain,application/json";
+const accepted = "image/png,image/jpeg,image/webp,.json,.txt,text/plain,application/json";
 const MAX_BYTES = 10 * 1024 * 1024;
-const allowedTypes = new Set(["application/json", "text/plain", "image/png", "image/jpeg"]);
+const allowedTypes = new Set(["application/json", "text/plain", "image/png", "image/jpeg", "image/webp"]);
 
 export function EvidenceUploader({ files, onChange }: Props) {
   const [dragging, setDragging] = useState(false);
@@ -33,6 +33,7 @@ export function EvidenceUploader({ files, onChange }: Props) {
     <section className="panel p-4">
       <h2 className="section-title">证据上传</h2>
       <label
+        htmlFor="evidence-files"
         className={`mt-3 flex cursor-pointer flex-col items-center rounded-md border border-dashed p-4 text-center text-sm transition-colors ${dragging ? "border-blue-500 bg-blue-50" : "border-slate-300 bg-slate-50 hover:border-blue-400 hover:bg-blue-50/40"}`}
         onDragEnter={(event) => {
           event.preventDefault();
@@ -45,6 +46,7 @@ export function EvidenceUploader({ files, onChange }: Props) {
         <FileUp />
         <span>拖拽或选择 PNG、JPEG、JSON、TXT（单个最大 10 MB）</span>
         <input
+          id="evidence-files"
           className="hidden"
           multiple
           type="file"

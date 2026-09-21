@@ -117,4 +117,15 @@ npm run test
 npm run build
 ```
 
+## 测试
+
+复制 `.env.test.example` 为本地 `.env.test`，并将 `DATABASE_URL` 指向数据库名以
+`_test` 结尾的 PostgreSQL。测试命令会拒绝其他数据库，`storage-test/` 会在集成
+测试前后清理。先执行 `npm run db:migrate`，然后运行 `npm run test:unit`、
+`npm run test:integration`、`npm run test:e2e` 或 `npm run test:coverage`。
+
+Playwright 首次使用须执行 `npx playwright install chromium`。真实模型 smoke 默认
+跳过；仅在同时设置 `RUN_LIVE_LLM_TESTS=1` 与 `DASHSCOPE_API_KEY` 后运行
+`npm run test:live-llm`。它只发送“请只回复 OK”，不上传附件、不写数据库。
+
 演示数据包含 Bedrock `web_search_20250305` 工具不兼容、SSE 生命周期异常与 `502 + context canceled` 等排障场景。

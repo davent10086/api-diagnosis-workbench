@@ -5,4 +5,9 @@ tsconfig.tsbuildinfo
 .env.local
 storage/*
 !storage/.gitkeep
+storage-test/
+coverage/
+playwright-report/
+test-results/
+.env.test
 knowledge/official-clean/

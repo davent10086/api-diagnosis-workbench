@@ -68,7 +68,7 @@ const IMAGE_EXTRACTION_CONCURRENCY = 2;
 type WorkflowNode = "prepare" | "images" | "retrieval" | "model" | "adjudicate" | "validate_and_persist";
 export class DiagnosisNotFoundError extends Error {}
 export class DiagnosisConflictError extends Error {}
-function workflowSummary(error: unknown) {
+export function workflowSummary(error: unknown) {
   const message = error instanceof Error ? error.message : "step failed";
   if (/429|rate limit/i.test(message)) return "upstream rate limited";
   if (/timeout|abort/i.test(message)) return "upstream timeout or cancellation";
@@ -104,7 +104,13 @@ async function markWorkflowStep(
     });
 }
 export function parseAiReport(raw: string): AiReport {
-  return reportSchema.parse(JSON.parse(raw));
+  const json = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try {
+    return reportSchema.parse(JSON.parse(json));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown validation error";
+    throw new Error(`Invalid AI diagnosis report: ${message}`);
+  }
 }
 function isChineseReport(report: AiReport) {
   const readableText = [
@@ -124,7 +130,7 @@ function assertNotAborted(signal?: AbortSignal) {
       ? signal.reason
       : new DOMException("Request cancelled", "AbortError");
 }
-function validateEvidence(report: AiReport, context: EvidenceContext) {
+export function validateEvidence(report: AiReport, context: EvidenceContext) {
   for (const evidence of report.confirmed_evidence) {
     const [source, rawReference] = evidence.split(":", 2);
     const reference = rawReference?.split(/[=\s]/, 1)[0]?.replace(/\[\d+\].*$/, "");
@@ -153,7 +159,7 @@ function config() {
     ),
   };
 }
-function messageContent(body: DashScopeResponse) {
+export function parseDashScopeContent(body: DashScopeResponse) {
   const content = body.output?.choices?.[0]?.message?.content;
   if (typeof content === "string" && content) return content;
   if (Array.isArray(content)) {
@@ -192,7 +198,7 @@ async function dashScopeAttempt(
     throw new Error(
       `Qwen request failed (HTTP ${response.status}${body.code ? ` / ${body.code}` : ""}): ${body.message || "request rejected"}`,
     );
-  return messageContent(body);
+  return parseDashScopeContent(body);
 }
 function retryableModelFailure(error: unknown) {
   const message = error instanceof Error ? error.message : "";

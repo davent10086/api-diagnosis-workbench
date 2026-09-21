@@ -1,7 +1,7 @@
 import { rm } from "fs/promises";
-import { join } from "path";
 import { inArray, or } from "drizzle-orm";
 import { db } from "@/db/client";
+import { isManagedStoragePath } from "@/lib/storage";
 import {
   apiTraces,
   caseLinks,
@@ -50,8 +50,8 @@ export async function deleteCases(caseIds: string[]) {
   });
   await Promise.all(
     assets.map((asset) =>
-      asset.filePath.startsWith("storage")
-        ? rm(join(process.cwd(), asset.filePath), { force: true }).catch(() => undefined)
+      isManagedStoragePath(asset.filePath)
+        ? rm(asset.filePath, { force: true }).catch(() => undefined)
         : undefined,
     ),
   );

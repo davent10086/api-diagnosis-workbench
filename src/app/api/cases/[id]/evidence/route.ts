@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from "crypto";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, rm, writeFile } from "fs/promises";
 import { basename, join } from "path";
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { cases, evidenceAssets } from "@/db/schema";
+import { storageFilePath, storageRoot } from "@/lib/storage";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const allowedTypes = new Set([
@@ -15,6 +16,10 @@ const allowedTypes = new Set([
   "image/jpeg",
   "image/webp",
 ]);
+function validWebp(data: Buffer) {
+  return data.length >= 12 && data.subarray(0, 4).equals(Buffer.from("RIFF")) &&
+    data.subarray(8, 12).equals(Buffer.from("WEBP"));
+}
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const contentLength = Number(request.headers.get("content-length") ?? 0);
   if (contentLength > MAX_BYTES + 100_000)
@@ -52,6 +57,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: "PNG 文件签名无效。" }, { status: 415 });
   if (file.type === "image/jpeg" && (data[0] !== 255 || data[1] !== 216 || data[2] !== 255))
     return NextResponse.json({ error: "JPEG 文件签名无效。" }, { status: 415 });
+  if (file.type === "image/webp" && !validWebp(data))
+    return NextResponse.json({ error: "Invalid WEBP signature." }, { status: 415 });
   // Text is redacted server-side. Images are intentionally retained and made
   // available to the vision diagnosis flow without a separate confirmation step.
   let redactionStatus = file.type.startsWith("image/") ? "direct_upload" : "redacted";
@@ -73,16 +80,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
   const safeName = basename(file.name).replace(/[^\w.\-]/g, "_");
   const storedName = `${randomUUID()}-${safeName || "evidence"}`;
+  let path: string | undefined;
   try {
-    const root = join(process.cwd(), "storage");
-    const path = join(root, storedName);
+    const root = storageRoot();
+    path = join(root, storedName);
     await mkdir(root, { recursive: true });
     await writeFile(path, data, { flag: "wx" });
     const [asset] = await db
       .insert(evidenceAssets)
       .values({
         caseId: id,
-        filePath: join("storage", storedName),
+        filePath: storageFilePath(storedName),
         fileHash: createHash("sha256").update(data).digest("hex"),
         evidenceType,
         redactionStatus,
@@ -95,6 +103,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .returning({ id: evidenceAssets.id });
     return NextResponse.json(asset, { status: 201 });
   } catch {
+    if (path) await rm(path, { force: true }).catch(() => undefined);
     return NextResponse.json({ error: "无法保存证据。" }, { status: 503 });
   }
 }

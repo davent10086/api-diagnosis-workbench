@@ -4,8 +4,10 @@ const MASK = "[已遮蔽]";
 const secretKey =
   /(authorization|cookie|password|passwd|secret|token|api[-_]?key|access[-_]?key|private[-_]?key|credential|session)/i;
 const inlinePatterns = [
-  /(authorization\s*[:=]\s*)([^\s,;]+)/gi,
+  /(authorization\s*[:=]\s*)(?:bearer\s+)?([^\s,;]+)/gi,
   /(bearer\s+)([A-Za-z0-9._-]+)/gi,
+  /(cookie\s*[:=]\s*)([^\r\n;]+)/gi,
+  /((?:password|passwd|secret|token|api[-_]?key|access[-_]?key)\s*[:=]\s*["']?)([^\s,;"'}\]]+)/gi,
   /(sk-[A-Za-z0-9_-]{8,})/g,
   /([?&](?:api[-_]?key|token|access[-_]?token)=)([^&#\s]+)/gi,
   /(AIza[\w-]{20,}|(?:AKIA|ASIA)[A-Z0-9]{16}|-----BEGIN [A-Z ]+ KEY-----)/g,
@@ -17,7 +19,9 @@ export function redact(text: string) {
     .replace(inlinePatterns[1], (_match, prefix) => `${prefix}${MASK}`)
     .replace(inlinePatterns[2], MASK)
     .replace(inlinePatterns[3], (_match, prefix) => `${prefix}${MASK}`)
-    .replace(inlinePatterns[4], MASK);
+    .replace(inlinePatterns[4], MASK)
+    .replace(inlinePatterns[5], (_match, prefix) => `${prefix}${MASK}`)
+    .replace(inlinePatterns[6], (_match, prefix) => `${prefix}${MASK}`);
 }
 export function hasSensitive(text: string) {
   return inlinePatterns.some((pattern) => {
