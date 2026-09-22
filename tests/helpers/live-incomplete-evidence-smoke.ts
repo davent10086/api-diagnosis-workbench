@@ -1,0 +1,53 @@
+import { eq } from "drizzle-orm";
+import { assertTestDatabase } from "../setup/env";
+
+if (process.env.RUN_LIVE_LLM_TESTS !== "1" || !process.env.DASHSCOPE_API_KEY)
+  throw new Error("Set RUN_LIVE_LLM_TESTS=1 and DASHSCOPE_API_KEY to run this smoke test.");
+assertTestDatabase();
+
+async function main() {
+  const [{ db, pool }, schema, { runDiagnosis }, { deleteCases }] = await Promise.all([
+    import("@/db/client"),
+    import("@/db/schema"),
+    import("@/lib/diagnosis"),
+    import("@/lib/delete-cases"),
+  ]);
+  let caseId: string | undefined;
+  try {
+  const [item] = await db
+    .insert(schema.cases)
+    .values({ title: "live smoke: incomplete 502 evidence", status: "completed" })
+    .returning({ id: schema.cases.id });
+  caseId = item.id;
+  await db.insert(schema.apiTraces).values({
+    caseId,
+    provider: "Bedrock",
+    route: "bedrock",
+    statusCode: 502,
+  });
+  const result = await runDiagnosis(caseId, "low");
+  const [run] = await db
+    .select({ report: schema.diagnosisRuns.report, status: schema.diagnosisRuns.status })
+    .from(schema.diagnosisRuns)
+    .where(eq(schema.diagnosisRuns.id, result.runId));
+  const report = run.report as Record<string, unknown>;
+  const persisted = run.report as Record<string, unknown>;
+  console.log(JSON.stringify({
+    runStatus: run.status,
+    conclusionStatus: persisted.conclusion_status,
+    summary: report.summary,
+    rootCause: report.root_cause,
+    missingEvidence: report.missing_evidence,
+  }));
+  } finally {
+    if (caseId) {
+      try {
+        await deleteCases([caseId]);
+      } catch (error) {
+        console.error("live diagnosis cleanup failed", error);
+      }
+    }
+    await pool.end();
+  }
+}
+main().catch((error) => { console.error(error instanceof Error ? error.message : "live diagnosis failed"); process.exitCode = 1; });

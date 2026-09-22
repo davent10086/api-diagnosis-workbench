@@ -18,13 +18,16 @@
     "test:coverage": "vitest run --coverage",
     "test:all": "npm run lint && npm run typecheck && npm run test:unit && npm run test:integration && npm run test:e2e",
     "test:live-llm": "cross-env RUN_LIVE_LLM_TESTS=1 vitest run tests/contract/dashscope-live.test.ts",
+    "test:live-diagnosis": "tsx tests/helpers/live-incomplete-evidence-smoke.ts",
+    "eval:diagnosis": "tsx src/eval-diagnosis.ts",
     "test:db:reset": "tsx tests/helpers/db-reset.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx src/db/seed.ts",
     "knowledge:clean": "tsx src/db/clean-knowledge.ts",
     "knowledge:import": "tsx src/db/import-knowledge.ts",
-    "worker": "tsx src/worker.ts"
+    "worker": "tsx src/worker.ts",
+    "dev-all": "concurrently --kill-others-on-fail --names web,worker --prefix-colors cyan,magenta npm:dev npm:worker"
   },
   "dependencies": {
     "@langchain/core": "^1.2.11",
@@ -57,6 +60,7 @@
     "@vitest/coverage-v8": "^2.1.8",
     "autoprefixer": "^10.4.20",
     "caniuse-lite": "^1.0.30001650",
+    "concurrently": "^9.2.4",
     "cross-env": "^7.0.3",
     "drizzle-kit": "^0.28.1",
     "es-abstract": "^1.23.3",

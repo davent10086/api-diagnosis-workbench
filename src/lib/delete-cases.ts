@@ -7,7 +7,9 @@ import {
   caseLinks,
   cases,
   citations,
+  diagnosisReviews,
   diagnosisRuns,
+  diagnosisWorkflowSteps,
   evidenceAssets,
   extractedFields,
   ruleFindings,
@@ -15,15 +17,24 @@ import {
 
 export async function deleteCases(caseIds: string[]) {
   if (!caseIds.length) return 0;
-  const assets = await db
-    .select({ id: evidenceAssets.id, filePath: evidenceAssets.filePath })
-    .from(evidenceAssets)
-    .where(inArray(evidenceAssets.caseId, caseIds));
-  const runs = await db
-    .select({ id: diagnosisRuns.id })
-    .from(diagnosisRuns)
-    .where(inArray(diagnosisRuns.caseId, caseIds));
-  await db.transaction(async (tx) => {
+  const assets = await db.transaction(async (tx) => {
+    // Read every dependent row in the same transaction that removes it. This
+    // prevents a worker from adding a child row between discovery and delete.
+    const assets = await tx
+      .select({ id: evidenceAssets.id, filePath: evidenceAssets.filePath })
+      .from(evidenceAssets)
+      .where(inArray(evidenceAssets.caseId, caseIds));
+    const runs = await tx
+      .select({ id: diagnosisRuns.id })
+      .from(diagnosisRuns)
+      .where(inArray(diagnosisRuns.caseId, caseIds));
+    // These tables reference diagnosis_runs without ON DELETE CASCADE. Remove
+    // them first so deleting a diagnosed case remains atomic.
+    if (runs.length) {
+      const runIds = runs.map((run) => run.id);
+      await tx.delete(diagnosisWorkflowSteps).where(inArray(diagnosisWorkflowSteps.diagnosisId, runIds));
+      await tx.delete(diagnosisReviews).where(inArray(diagnosisReviews.diagnosisId, runIds));
+    }
     if (runs.length)
       await tx.delete(citations).where(
         inArray(
@@ -47,6 +58,7 @@ export async function deleteCases(caseIds: string[]) {
     await tx.delete(apiTraces).where(inArray(apiTraces.caseId, caseIds));
     await tx.delete(diagnosisRuns).where(inArray(diagnosisRuns.caseId, caseIds));
     await tx.delete(cases).where(inArray(cases.id, caseIds));
+    return assets;
   });
   await Promise.all(
     assets.map((asset) =>
