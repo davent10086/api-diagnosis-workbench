@@ -1,11 +1,13 @@
+import { config } from "dotenv";
 import { eq } from "drizzle-orm";
 import { assertTestDatabase } from "../setup/env";
 
+config({ path: ".env.local" });
 if (process.env.RUN_LIVE_LLM_TESTS !== "1" || !process.env.DASHSCOPE_API_KEY)
   throw new Error("Set RUN_LIVE_LLM_TESTS=1 and DASHSCOPE_API_KEY to run this smoke test.");
 assertTestDatabase();
 
-async function main() {
+export async function runLiveDiagnosisSmoke() {
   const [{ db, pool }, schema, { runDiagnosis }, { deleteCases }] = await Promise.all([
     import("@/db/client"),
     import("@/db/schema"),
@@ -50,4 +52,8 @@ async function main() {
     await pool.end();
   }
 }
-main().catch((error) => { console.error(error instanceof Error ? error.message : "live diagnosis failed"); process.exitCode = 1; });
+if (process.argv[1]?.includes("live-incomplete-evidence-smoke"))
+  void runLiveDiagnosisSmoke().catch((error) => {
+    console.error(error instanceof Error ? error.message : "live diagnosis failed");
+    process.exitCode = 1;
+  });
