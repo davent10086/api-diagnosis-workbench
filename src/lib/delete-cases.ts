@@ -20,6 +20,13 @@ export async function deleteCases(caseIds: string[]) {
   const assets = await db.transaction(async (tx) => {
     // Read every dependent row in the same transaction that removes it. This
     // prevents a worker from adding a child row between discovery and delete.
+    const targets = await tx
+      .select({ id: cases.id, status: cases.status })
+      .from(cases)
+      .where(inArray(cases.id, caseIds))
+      .for("update");
+    if (targets.some((item) => item.status === "analyzing"))
+      throw new Error("Cannot delete a case while diagnosis is running.");
     const assets = await tx
       .select({ id: evidenceAssets.id, filePath: evidenceAssets.filePath })
       .from(evidenceAssets)
