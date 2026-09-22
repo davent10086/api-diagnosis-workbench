@@ -34,11 +34,11 @@ const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPTED_TYPES = new Set([
   "image/png",
   "image/jpeg",
-  "image/webp",
   "application/json",
   "text/plain",
 ]);
-const ACCEPT = "image/png,image/jpeg,image/webp,.json,.txt,.log,application/json,text/plain";
+const ACCEPTED_EXTENSIONS = new Set(["png", "jpg", "jpeg", "json", "txt", "log"]);
+const ACCEPT = "image/png,image/jpeg,.json,.txt,.log,application/json,text/plain";
 
 type EvidenceType =
   | "customer_chat"
@@ -90,7 +90,12 @@ const emptyMetadata: Metadata = {
 };
 
 function isImage(file: File) {
-  return file.type.startsWith("image/");
+  return file.type === "image/png" || file.type === "image/jpeg" || /\.(png|jpe?g)$/i.test(file.name);
+}
+
+function isSupportedEvidenceFile(file: File) {
+  const ext = file.name.split(".").pop()?.toLowerCase();
+  return ACCEPTED_TYPES.has(file.type) || (ext !== undefined && ACCEPTED_EXTENSIONS.has(ext));
 }
 
 function formatSize(bytes: number) {
@@ -195,8 +200,7 @@ export function CaseWorkbench() {
         setToast(`“${file.name}” 不符合 1 B–10 MB 的大小限制。`);
         continue;
       }
-      const isLog = /\.log$/i.test(file.name);
-      if (!ACCEPTED_TYPES.has(file.type) && !isLog) {
+      if (!isSupportedEvidenceFile(file)) {
         setToast(`“${file.name}” 不是支持的 PNG、JPG、WEBP、JSON、TXT 或 LOG 文件。`);
         continue;
       }

@@ -29,7 +29,6 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
         status: cases.status,
         summary: cases.summary,
         finalConclusion: cases.finalConclusion,
-        confidence: cases.confidence,
       })
       .from(cases)
       .where(eq(cases.id, id))
@@ -74,9 +73,9 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
             <h1 className="text-xl font-bold">{item.title}</h1>
             <DeleteCaseButton caseId={id} />
           </div>
-          <p className="mt-2 text-sm text-muted">
+          <p className="hidden">
             状态：{caseStatusLabel(item.status)} · 置信度：
-            {item.confidence === null ? "-" : `${Math.round(item.confidence * 100)}%`}
+            {null}
           </p>
           <p className="mt-4">{item.summary}</p>
           <p className="mt-3 text-sm">{item.finalConclusion}</p>
@@ -126,7 +125,7 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
             <div className="space-y-5 p-4">
               <div className="border-l-2 border-blue-600 bg-blue-50 px-3 py-3">
                 <p className="font-semibold text-slate-800">{String(aiReport.summary)}</p>
-                <p className="mt-2 text-sm text-blue-800">
+                <p className="hidden">
                   置信度 {String(aiReport.confidence)}% · {faultLayerLabel(String(aiReport.fault_layer))}
                 </p>
                 <p className="mt-1 text-sm font-semibold text-blue-800">
@@ -183,6 +182,14 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
                 "originalName" in asset.extraction
                   ? String(asset.extraction.originalName)
                   : asset.filePath}{" "}
+                {asset.extraction &&
+                typeof asset.extraction === "object" &&
+                "status" in asset.extraction &&
+                asset.extraction.status === "failed" &&
+                "error" in asset.extraction &&
+                typeof asset.extraction.error === "string" ? (
+                  <span className="ml-2 text-amber-700">图片提取失败：{asset.extraction.error}</span>
+                ) : null}
                 · {redactionStatusLabel(asset.redactionStatus)}
               </p>
             ))

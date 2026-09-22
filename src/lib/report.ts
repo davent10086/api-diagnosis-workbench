@@ -5,14 +5,11 @@ export function buildReport(trace: Trace, findings: Finding[]): Report {
     findings.find((item) => item.severity === "critical") ??
     findings.find((item) => item.severity === "high") ??
     findings[0];
-  const confirmed = findings.filter((item) => !item.needsMoreEvidence).length;
-  const confidence = primary ? Math.min(90, 50 + confirmed * 10) : 20;
   const symptom = primary?.conclusion ?? "未命中确定性规则；请补充上游响应、日志或流式事件。";
   return {
     symptom,
     severity: primary?.severity ?? "low",
     fault_layer: primary?.faultLayer ?? "unknown",
-    confidence,
     evidence: primary?.evidence ?? [],
     next_checks: primary
       ? [

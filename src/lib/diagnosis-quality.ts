@@ -9,7 +9,6 @@ export type EvidenceLedgerItem = {
 };
 
 type ReportLike = {
-  confidence: number;
   root_cause: string;
   confirmed_evidence: string[];
   hypotheses: string[];
@@ -54,7 +53,6 @@ export function adjudicateReport(
     blockers.push("没有可追溯的已确认事实，不能确认根因。");
   if (!rootCauseEvidenceIsConfirmed)
     blockers.push("根因未绑定到已确认的具体证据；模型置信度不能替代证据链。");
-  if (report.confidence < 80) blockers.push(`模型置信度 ${report.confidence}% 低于自动确认门槛 80%。`);
   if (!hasDefinitiveRuleCitation)
     blockers.push("根因缺少可确定性规则支撑；文本、截图或知识库片段本身只能作为候选证据。");
   if (!report.hypotheses.length)

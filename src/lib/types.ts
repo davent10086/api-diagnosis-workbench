@@ -37,7 +37,6 @@ export type Report = {
   symptom: string;
   severity: Severity;
   fault_layer: Layer;
-  confidence: number;
   evidence: string[];
   next_checks: string[];
   external_message: string;

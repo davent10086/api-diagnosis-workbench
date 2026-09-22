@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { parseAiReport, parseDashScopeContent, validateEvidence, workflowSummary } from "@/lib/diagnosis";
 
 const report = {
-  summary: "上游返回限流", root_cause: "配额不足", confidence: "85%", severity: "high", fault_layer: "provider",
+  summary: "上游返回限流", root_cause: "配额不足", severity: "high", fault_layer: "provider",
   confirmed_evidence: ["rule:http-429"], hypotheses: ["可能存在突发流量"], missing_evidence: ["补充重试记录"], next_actions: ["检查配额"], customer_message: "请确认上游配额。",
 };
 
 describe("diagnosis boundary validation", () => {
   it("accepts fenced JSON but returns actionable parse errors", () => {
-    expect(parseAiReport(`\`\`\`json\n${JSON.stringify(report)}\n\`\`\``).confidence).toBe(85);
+    expect(parseAiReport(`\`\`\`json\n${JSON.stringify(report)}\n\`\`\``).summary).toBe(report.summary);
     expect(() => parseAiReport("not json")).toThrow("Invalid AI diagnosis report");
   });
   it("rejects invented evidence IDs and unknown source prefixes", () => {

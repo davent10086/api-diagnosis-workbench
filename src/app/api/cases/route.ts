@@ -54,7 +54,6 @@ export async function POST(request: NextRequest) {
           status: "uploading",
           summary: report.symptom,
           finalConclusion: report.external_message,
-          confidence: report.confidence / 100,
         })
         .returning({ id: cases.id });
       await tx.insert(apiTraces).values({
@@ -98,12 +97,20 @@ export async function POST(request: NextRequest) {
   }
 }
 
+function deleteErrorResponse(error: unknown) {
+  const message = error instanceof Error ? error.message : "Unable to clear cases.";
+  const safeMessage = /^Cannot delete a case while diagnosis is running\.$/.test(message)
+    ? message
+    : "Unable to clear cases.";
+  return NextResponse.json({ error: safeMessage }, { status: 503 });
+}
+
 export async function DELETE() {
   try {
     const items = await db.select({ id: cases.id }).from(cases);
     await deleteCases(items.map((item) => item.id));
     return NextResponse.json({ deleted: items.length });
-  } catch {
-    return NextResponse.json({ error: "Unable to clear cases." }, { status: 503 });
+  } catch (error) {
+    return deleteErrorResponse(error);
   }
 }

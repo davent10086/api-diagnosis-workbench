@@ -34,16 +34,35 @@ function containsFilter(keyword: string, vendor?: string) {
   const match = or(ilike(documentChunks.title, `%${keyword}%`), ilike(documentChunks.body, `%${keyword}%`), ilike(documentChunks.category, `%${keyword}%`));
   return vendor ? and(ilike(documentChunks.vendor, vendor), match) : match;
 }
+function searchTerms(keyword: string) {
+  const expanded = keyword.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+  return [...new Set(expanded.match(/[\p{L}\p{N}_-]+/gu) ?? [])]
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 2)
+    .slice(0, 8);
+}
 function fallback(keyword: string, vendor?: string) {
-  const boost = sql<number>`coalesce(${documentChunks.priority}, 0) + case when ${documentChunks.title} ilike ${`%${keyword}%`} then 40 when ${documentChunks.category} ilike ${`%${keyword}%`} then 20 else 0 end`;
-  return db.select({ id: documentChunks.id, title: documentChunks.title, vendor: documentChunks.vendor, category: documentChunks.category, sourceUrl: documentChunks.sourceUrl, body: documentChunks.body, score: boost }).from(documentChunks).where(containsFilter(keyword, vendor)).orderBy(desc(boost)).limit(12);
+  const terms = searchTerms(keyword);
+  const termMatches = terms.flatMap((term) => [
+    ilike(documentChunks.title, `%${term}%`),
+    ilike(documentChunks.category, `%${term}%`),
+    ilike(documentChunks.body, `%${term}%`),
+  ]);
+  const match = or(containsFilter(keyword), ...termMatches);
+  const filter = vendor ? and(ilike(documentChunks.vendor, vendor), match) : match;
+  const termBoost = sql.join(
+    terms.map((term) => sql` + case when ${documentChunks.title} ilike ${`%${term}%`} then 20 when ${documentChunks.category} ilike ${`%${term}%`} then 10 when ${documentChunks.body} ilike ${`%${term}%`} then 1 else 0 end`),
+  );
+  const boost = sql<number>`coalesce(${documentChunks.priority}, 0) + case when ${documentChunks.title} ilike ${`%${keyword}%`} then 40 when ${documentChunks.category} ilike ${`%${keyword}%`} then 20 else 0 end${termBoost}`;
+  return db.select({ id: documentChunks.id, title: documentChunks.title, vendor: documentChunks.vendor, category: documentChunks.category, sourceUrl: documentChunks.sourceUrl, body: documentChunks.body, score: boost }).from(documentChunks).where(filter).orderBy(desc(boost)).limit(12);
 }
 async function queryOnce(keyword: string, vendor?: string): Promise<{ items: KnowledgeHit[]; backend: KnowledgeSearchMeta["backend"]; error?: string }> {
   const text = sql<string>`concat_ws(' ', ${documentChunks.title}, ${documentChunks.category}, ${documentChunks.body})`;
   const filter = vendor ? and(ilike(documentChunks.vendor, vendor), sql`${text} &@ ${keyword}`) : sql`${text} &@ ${keyword}`;
   try {
     const items = await db.select({ id: documentChunks.id, title: documentChunks.title, vendor: documentChunks.vendor, category: documentChunks.category, sourceUrl: documentChunks.sourceUrl, body: documentChunks.body, score: sql<number>`pgroonga_score(tableoid, ctid) + coalesce(${documentChunks.priority}, 0)` }).from(documentChunks).where(filter).orderBy(desc(sql`pgroonga_score(tableoid, ctid) + coalesce(${documentChunks.priority}, 0)`)).limit(12);
-    return { items, backend: "pgroonga" };
+    if (items.length) return { items, backend: "pgroonga" };
+    return { items: await fallback(keyword, vendor), backend: "postgres-contains" };
   } catch (pgError) {
     try { return { items: await fallback(keyword, vendor), backend: "postgres-contains" }; }
     catch (error) { return { items: [], backend: "unavailable", error: safeError(error ?? pgError) }; }

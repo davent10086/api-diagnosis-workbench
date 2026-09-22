@@ -5,7 +5,6 @@ import { normalizeKnowledgeVendor } from "./knowledge";
 const report = {
   summary: "429 限流",
   root_cause: "上游配额不足",
-  confidence: "85%",
   severity: "high",
   fault_layer: "provider",
   confirmed_evidence: ["rule:http-429"],
@@ -17,8 +16,8 @@ const report = {
 };
 
 describe("parseAiReport", () => {
-  it("normalizes percentage confidence without weakening report validation", () => {
-    expect(parseAiReport(JSON.stringify(report)).confidence).toBe(85);
+  it("accepts a report without a confidence field", () => {
+    expect(parseAiReport(JSON.stringify(report)).summary).toBe(report.summary);
   });
 
   it("rejects malformed JSON and missing required report fields", () => {

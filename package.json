@@ -28,7 +28,7 @@
     "db:seed": "tsx src/db/seed.ts",
     "knowledge:clean": "tsx src/db/clean-knowledge.ts",
     "knowledge:import": "tsx src/db/import-knowledge.ts",
-    "worker": "tsx src/worker.ts",
+    "worker": "tsx watch src/worker.ts",
     "dev-all": "concurrently --kill-others-on-fail --names web,worker --prefix-colors cyan,magenta npm:dev npm:worker"
   },
   "dependencies": {

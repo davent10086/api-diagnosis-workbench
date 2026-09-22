@@ -9,10 +9,13 @@ export function ClearCasesButton() {
     setBusy(true);
     try {
       const r = await fetch("/api/cases", { method: "DELETE" });
-      if (!r.ok) throw new Error();
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(typeof body.error === "string" ? body.error : "清空失败，请稍后重试。");
+      }
       window.location.reload();
-    } catch {
-      alert("清空失败，请稍后重试。");
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "清空失败，请稍后重试。");
       setBusy(false);
     }
   }

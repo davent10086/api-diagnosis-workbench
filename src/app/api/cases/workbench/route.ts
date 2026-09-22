@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     const [item] = await db.transaction(async (tx) => {
       const [created] = await tx
         .insert(cases)
-        .values({ title, status: "uploading", summary: report.symptom, finalConclusion: report.external_message, confidence: report.confidence / 100 })
+        .values({ title, status: "uploading", summary: report.symptom, finalConclusion: report.external_message })
         .returning({ id: cases.id });
       await tx
         .insert(apiTraces)

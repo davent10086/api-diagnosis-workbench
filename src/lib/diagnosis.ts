@@ -1,5 +1,5 @@
 import { readFile } from "fs/promises";
-import { join } from "path";
+import { resolve } from "path";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
@@ -29,10 +29,6 @@ const reportTextItem = z.preprocess((value) => {
 const reportSchema = z.object({
   summary: z.string().min(1).max(4000),
   root_cause: z.string().min(1).max(4000),
-  confidence: z.preprocess(
-    (value) => (typeof value === "string" ? Number(value.replace(/[^0-9.]+/g, "")) : value),
-    z.number().min(0).max(100),
-  ),
   severity: z.enum(["critical", "high", "medium", "low"]),
   fault_layer: z.enum(["client", "gateway", "adapter", "route", "provider", "upstream", "unknown"]),
   confirmed_evidence: z.array(reportTextItem).max(12),
@@ -66,6 +62,10 @@ type DashScopeResponse = {
 };
 const MAX_MODEL_IMAGES = 5;
 const IMAGE_EXTRACTION_CONCURRENCY = 2;
+const DASHSCOPE_REQUEST_TIMEOUT_MS = Math.min(
+  180_000,
+  Math.max(10_000, Number(process.env.DASHSCOPE_REQUEST_TIMEOUT_MS) || 90_000),
+);
 type WorkflowNode = "prepare" | "images" | "retrieval" | "model" | "adjudicate" | "validate_and_persist";
 export class DiagnosisNotFoundError extends Error {}
 export class DiagnosisConflictError extends Error {}
@@ -191,8 +191,8 @@ async function dashScopeAttempt(
       parameters: { result_format: "message", temperature: 0.1, ...parameters },
     }),
     signal: signal
-      ? AbortSignal.any([signal, AbortSignal.timeout(180_000)])
-      : AbortSignal.timeout(180_000),
+      ? AbortSignal.any([signal, AbortSignal.timeout(DASHSCOPE_REQUEST_TIMEOUT_MS)])
+      : AbortSignal.timeout(DASHSCOPE_REQUEST_TIMEOUT_MS),
   });
   const body = (await response.json().catch(() => ({}))) as DashScopeResponse;
   if (!response.ok)
@@ -203,6 +203,7 @@ async function dashScopeAttempt(
 }
 function retryableModelFailure(error: unknown) {
   const message = error instanceof Error ? error.message : "";
+  if (/timeout|abort/i.test(message)) return false;
   return /HTTP (429|5\d\d)|fetch failed|ECONN|network|timeout/i.test(message);
 }
 async function waitForRetry(delayMs: number, signal?: AbortSignal) {
@@ -239,7 +240,7 @@ async function extractImage(
   const existing = asset.extraction as ImageExtraction | null;
   if (existing?.status === "completed") return existing;
   try {
-    const data = await readFile(join(process.cwd(), asset.filePath));
+    const data = await readFile(resolve(process.cwd(), asset.filePath));
     const mime = asset.filePath.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";
     const content = await dashScopeCompletion(
       "multimodal-generation",
@@ -263,12 +264,19 @@ async function extractImage(
       { response_format: { type: "json_object" } },
       signal,
     );
+    const fieldValue = z.union([
+      z.string(),
+      z.number(),
+      z.boolean(),
+      z.null(),
+      z.array(z.union([z.string(), z.number(), z.boolean()])).max(30),
+    ]);
     const parsed = z
       .object({
         summary: z.string().max(3000),
         fields: z.union([
           z.array(z.string().max(500)).max(30),
-          z.record(z.union([z.string(), z.number(), z.boolean()])).refine(
+          z.record(fieldValue).refine(
             (value) => Object.keys(value).length <= 30,
             "too many fields",
           ),
@@ -277,7 +285,11 @@ async function extractImage(
       .parse(JSON.parse(content));
     const fields = Array.isArray(parsed.fields)
       ? parsed.fields
-      : Object.entries(parsed.fields).map(([key, value]) => `${key}=${String(value).slice(0, 450)}`);
+      : Object.entries(parsed.fields).flatMap(([key, value]) =>
+          value === null
+            ? []
+            : [`${key}=${(Array.isArray(value) ? value.join("；") : String(value)).slice(0, 450)}`],
+        );
     const result: ImageExtraction = { status: "completed", summary: parsed.summary, fields };
     await db
       .update(evidenceAssets)
@@ -354,7 +366,7 @@ async function readTextEvidence(
   for (const asset of selected) {
     if (remaining <= 0) break;
     try {
-      const content = await readFile(join(process.cwd(), asset.filePath), "utf8");
+      const content = await readFile(resolve(process.cwd(), asset.filePath), "utf8");
       const included = content.slice(0, Math.min(40_000, remaining));
       remaining -= included.length;
       if (included.trim())
@@ -572,7 +584,7 @@ export async function runDiagnosis(
       })),
       evidenceLedger: buildEvidenceLedger(traceInput, allFindings, textEvidence, successfulImages),
       instructions:
-        "仅依据所提供的证据进行诊断，不能将推测写成已确认的根因。所有 needsMoreEvidence 规则都是确认阻断项，必须在 missing_evidence 中说明。文本、截图和知识库片段只能支持候选，除非存在对应的确定性 rule 证据。必须至少提出一个替代解释；无法排除时写入 hypotheses。summary、root_cause、confirmed_evidence 中的说明、hypotheses、missing_evidence、next_actions 和 customer_message 的所有可读文本必须使用简体中文。错误码、请求 ID、Trace ID、模型名、API 字段名、URL、引用的原始日志片段和证据引用前缀必须保持原样。confirmed_evidence 必须使用 rule:<id>、trace:<field>、image:<id>、text:<id> 或 knowledge:<id> 形式的引用；knowledge 引用可在 ID 后附中文说明。缺少证据支撑的结论必须写入 hypotheses。confirmed_evidence、hypotheses、missing_evidence 和 next_actions 中的每一项都必须是纯字符串，不能是对象。仅输出 JSON，字段为 summary、root_cause、confidence、severity、fault_layer、confirmed_evidence、hypotheses、missing_evidence、next_actions、customer_message。",
+        "仅依据所提供的证据进行诊断，不能将推测写成已确认的根因。所有 needsMoreEvidence 规则都是确认阻断项，必须在 missing_evidence 中说明。文本、截图和知识库片段只能支持候选，除非存在对应的确定性 rule 证据。必须至少提出一个替代解释；无法排除时写入 hypotheses。summary、root_cause、confirmed_evidence 中的说明、hypotheses、missing_evidence、next_actions 和 customer_message 的所有可读文本必须使用简体中文。错误码、请求 ID、Trace ID、模型名、API 字段名、URL、引用的原始日志片段和证据引用前缀必须保持原样。confirmed_evidence 必须使用 rule:<id>、trace:<field>、image:<id>、text:<id> 或 knowledge:<id> 形式的引用；knowledge 引用可在 ID 后附中文说明。缺少证据支撑的结论必须写入 hypotheses。confirmed_evidence、hypotheses、missing_evidence 和 next_actions 中的每一项都必须是纯字符串，不能是对象。仅输出 JSON，字段为 summary、root_cause、severity、fault_layer、confirmed_evidence、hypotheses、missing_evidence、next_actions、customer_message。",
     };
     const messages = [
       {
@@ -605,7 +617,26 @@ export async function runDiagnosis(
         parameters,
         signal,
       );
-      report = parseAiReport(raw);
+      try {
+        report = parseAiReport(raw);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message.slice(0, 1200) : "Invalid report schema";
+        const corrected = await dashScopeCompletion(
+          "multimodal-generation",
+          model,
+          [
+            ...messages,
+            {
+              role: "user",
+              content:
+                `The previous JSON failed schema validation: ${reason}. Return the complete JSON again. severity must be exactly one of critical, high, medium, low; never use unknown, none, or other values.`,
+            },
+          ],
+          parameters,
+          signal,
+        );
+        report = parseAiReport(corrected);
+      }
     }
     if (!isChineseReport(report)) {
       const retry = await dashScopeCompletion(
@@ -664,7 +695,6 @@ export async function runDiagnosis(
           status: "completed",
           summary: report.summary,
           finalConclusion: adjudication.conclusionStatus === "confirmed" ? report.root_cause : "初步诊断，待人工确认。",
-          confidence: report.confidence / 100,
           updatedAt: new Date(),
         })
         .where(eq(cases.id, caseId));
