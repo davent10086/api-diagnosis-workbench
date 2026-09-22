@@ -75,7 +75,7 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
             <DeleteCaseButton caseId={id} />
           </div>
           <p className="mt-2 text-sm text-muted">
-            状态：{item.status} · 置信度：
+            状态：{caseStatusLabel(item.status)} · 置信度：
             {item.confidence === null ? "-" : `${Math.round(item.confidence * 100)}%`}
           </p>
           <p className="mt-4">{item.summary}</p>
@@ -127,7 +127,7 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
               <div className="border-l-2 border-blue-600 bg-blue-50 px-3 py-3">
                 <p className="font-semibold text-slate-800">{String(aiReport.summary)}</p>
                 <p className="mt-2 text-sm text-blue-800">
-                  置信度 {String(aiReport.confidence)}% · {String(aiReport.fault_layer)}
+                  置信度 {String(aiReport.confidence)}% · {faultLayerLabel(String(aiReport.fault_layer))}
                 </p>
                 <p className="mt-1 text-sm font-semibold text-blue-800">
                   结论状态：{String(aiReport.conclusion_status ?? "provisional") === "confirmed" ? "已确认" : String(aiReport.conclusion_status ?? "provisional") === "insufficient" ? "证据不足" : "初步判断，待人工确认"}
@@ -183,7 +183,7 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
                 "originalName" in asset.extraction
                   ? String(asset.extraction.originalName)
                   : asset.filePath}{" "}
-                · {asset.redactionStatus}
+                · {redactionStatusLabel(asset.redactionStatus)}
               </p>
             ))
           )}
@@ -212,9 +212,120 @@ function EvidenceLedger({ items }: { items: unknown }) {
   return <div>
     <h3 className="text-sm font-semibold">证据账本</h3>
     <ul className="mt-2 divide-y divide-slate-100 rounded border border-slate-100">
-      {values.map((item, index) => <li className="p-2 text-xs text-slate-700" key={`${String(item.id)}-${index}`}><b>{String(item.kind)}</b> · {String(item.id)}<br />{String(item.statement)}</li>)}
+      {values.map((item, index) => <li className="p-2 text-xs text-slate-700" key={`${String(item.id)}-${index}`}><b>{evidenceKindLabel(String(item.kind))}</b> · {evidenceIdLabel(String(item.id))}<br />{String(item.statement)}</li>)}
     </ul>
   </div>;
+}
+
+const workflowNodeLabels: Record<string, string> = {
+  prepare: "准备诊断资料",
+  images: "图片证据提取",
+  retrieval: "本地知识库检索",
+  model: "模型诊断",
+  adjudicate: "结论裁定",
+  validate_and_persist: "校验并保存报告",
+};
+const workflowStatusLabels: Record<string, string> = {
+  running: "进行中",
+  completed: "已完成",
+  failed: "失败",
+  skipped: "已跳过",
+  cancelled: "已取消",
+};
+const caseStatusLabels: Record<string, string> = {
+  draft: "草稿",
+  uploading: "等待补充附件",
+  completed: "已完成",
+  analyzing: "AI 诊断中",
+};
+const redactionStatusLabels: Record<string, string> = {
+  pending: "等待脱敏",
+  redacted: "已脱敏",
+  direct_upload: "图片原样上传",
+};
+const faultLayerLabels: Record<string, string> = {
+  client: "客户端",
+  gateway: "网关",
+  adapter: "适配层",
+  route: "路由层",
+  provider: "服务商层",
+  upstream: "上游服务",
+  unknown: "未知",
+};
+const evidenceKindLabels: Record<string, string> = {
+  fact: "事实",
+  candidate: "候选证据",
+  blocker: "确认阻断项",
+};
+const traceFieldLabels: Record<string, string> = {
+  customerQuestion: "客户问题",
+  requestId: "请求 ID",
+  traceId: "Trace ID",
+  upstreamRequestId: "上游请求 ID",
+  provider: "服务商",
+  route: "路由",
+  model: "模型",
+  statusCode: "HTTP 状态码",
+  clientRequest: "客户端请求",
+  transformedRequest: "转换后的请求",
+  upstreamResponse: "上游响应",
+  finalResponse: "最终响应",
+  logs: "日志",
+  sse: "SSE 事件",
+};
+
+function evidenceKindLabel(kind: string) {
+  return evidenceKindLabels[kind] ?? kind;
+}
+
+function caseStatusLabel(status: string) {
+  return caseStatusLabels[status] ?? status;
+}
+
+function redactionStatusLabel(status: string) {
+  return redactionStatusLabels[status] ?? status;
+}
+
+function faultLayerLabel(layer: string) {
+  return faultLayerLabels[layer] ?? layer;
+}
+
+function evidenceIdLabel(id: string) {
+  const match = /^trace:([^.]+)(.*)$/.exec(id);
+  if (match) return `追踪：${traceFieldLabels[match[1]] ?? match[1]}${match[2]}`;
+  const prefixes: Record<string, string> = {
+    rule: "规则",
+    knowledge: "知识库",
+    image: "图片",
+    text: "文本证据",
+  };
+  const reference = /^([^:]+):(.*)$/.exec(id);
+  return reference && prefixes[reference[1]] ? `${prefixes[reference[1]]}：${reference[2]}` : id;
+}
+
+function workflowSummaryLabel(summary: string) {
+  if (summary === "case, trace and evidence loaded") return "案件、追踪信息和证据已加载";
+  if (summary === "model report received") return "已收到模型诊断报告";
+  if (summary === "report and citations saved") return "诊断报告和引用资料已保存";
+  if (summary === "no supported images") return "没有可处理的图片";
+  if (summary === "knowledge search unavailable") return "知识库检索不可用";
+  if (summary === "resumed after worker interruption") return "后台任务中断后已恢复";
+  if (summary === "upstream rate limited") return "上游服务触发限流";
+  if (summary === "upstream timeout or cancellation") return "上游服务超时或任务已取消";
+  if (summary === "upstream connection failed") return "上游服务连接失败";
+  if (summary === "step failed") return "步骤执行失败";
+  const images = /^(\d+) image\(s\) extracted; (\d+) failed and excluded from diagnosis$/.exec(summary);
+  if (images) return `已提取 ${images[1]} 张图片；${images[2]} 张提取失败，未纳入诊断`;
+  const imageSuccess = /^(\d+) image\(s\) extracted$/.exec(summary);
+  if (imageSuccess) return `已提取 ${imageSuccess[1]} 张图片`;
+  const documents = /^(\d+) document\(s\) selected$/.exec(summary);
+  if (documents) return `已选取 ${documents[1]} 篇资料`;
+  const adjudication = /^(confirmed|provisional|insufficient); (\d+) confirmation blocker\(s\)$/.exec(summary);
+  if (adjudication) {
+    const result = { confirmed: "已确认", provisional: "初步判断", insufficient: "证据不足" }[adjudication[1]];
+    return `${result}；${adjudication[2]} 项确认阻断项`;
+  }
+  return summary;
 }
 
 function ReportList({ title, items }: { title: string; items: unknown }) {
@@ -226,7 +337,7 @@ function ReportList({ title, items }: { title: string; items: unknown }) {
       <ul className="mt-2 divide-y divide-slate-100">
         {values.map((item, index) => (
           <li className="py-2 text-sm leading-6 text-slate-700" key={index}>
-            {String(item)}
+            {evidenceIdLabel(String(item))}
           </li>
         ))}
       </ul>
@@ -306,7 +417,7 @@ function ExecutionLog({
         <div className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-600">
           {workflowSteps.map((step) => (
             <p className="mt-1" key={step.nodeName}>
-              {step.nodeName}: {step.status}{step.summary ? ` · ${step.summary}` : ""}
+              {workflowNodeLabels[step.nodeName] ?? step.nodeName}：{workflowStatusLabels[step.status] ?? step.status}{step.summary ? ` · ${workflowSummaryLabel(step.summary)}` : ""}
             </p>
           ))}
         </div>

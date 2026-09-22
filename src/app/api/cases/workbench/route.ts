@@ -31,7 +31,7 @@ const bodySchema = z.object({
 export async function POST(request: Request) {
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success)
-    return NextResponse.json({ error: "Invalid workbench payload." }, { status: 400 });
+    return NextResponse.json({ error: "工作台提交内容无效。" }, { status: 400 });
   const { title, question, metadata, advanced } = parsed.data;
   let trace;
   try {
@@ -86,6 +86,6 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ ...item, findings, report }, { status: 201 });
   } catch {
-    return NextResponse.json({ error: "Unable to save workbench." }, { status: 503 });
+    return NextResponse.json({ error: "无法保存工作台案件。" }, { status: 503 });
   }
 }

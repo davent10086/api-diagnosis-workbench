@@ -19,12 +19,12 @@ const bodySchema = z.object({
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: caseId } = await params;
   if (!z.string().uuid().safeParse(caseId).success)
-    return NextResponse.json({ error: "Invalid case ID." }, { status: 400 });
+    return NextResponse.json({ error: "案件 ID 无效。" }, { status: 400 });
   const parsed = bodySchema.safeParse(await request.json().catch(() => undefined));
-  if (!parsed.success) return NextResponse.json({ error: "Invalid review payload." }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: "复核提交内容无效；驳回时请填写说明，修正时请填写根因。" }, { status: 400 });
   const [run] = await db.select({ id: diagnosisRuns.id }).from(diagnosisRuns)
     .where(and(eq(diagnosisRuns.id, parsed.data.diagnosisId), eq(diagnosisRuns.caseId, caseId))).limit(1);
-  if (!run) return NextResponse.json({ error: "Diagnosis run not found." }, { status: 404 });
+  if (!run) return NextResponse.json({ error: "未找到该诊断记录。" }, { status: 404 });
   const [review] = await db.insert(diagnosisReviews).values({
     diagnosisId: run.id,
     verdict: parsed.data.verdict,
@@ -37,7 +37,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: caseId } = await params;
   if (!z.string().uuid().safeParse(caseId).success)
-    return NextResponse.json({ error: "Invalid case ID." }, { status: 400 });
+    return NextResponse.json({ error: "案件 ID 无效。" }, { status: 400 });
   const rows = await db.select({ id: diagnosisReviews.id, diagnosisId: diagnosisReviews.diagnosisId, verdict: diagnosisReviews.verdict, correctedRootCause: diagnosisReviews.correctedRootCause, notes: diagnosisReviews.notes, createdAt: diagnosisReviews.createdAt })
     .from(diagnosisReviews).innerJoin(diagnosisRuns, eq(diagnosisReviews.diagnosisId, diagnosisRuns.id))
     .where(eq(diagnosisRuns.caseId, caseId)).orderBy(desc(diagnosisReviews.createdAt));

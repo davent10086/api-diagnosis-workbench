@@ -58,7 +58,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (file.type === "image/jpeg" && (data[0] !== 255 || data[1] !== 216 || data[2] !== 255))
     return NextResponse.json({ error: "JPEG 文件签名无效。" }, { status: 415 });
   if (file.type === "image/webp" && !validWebp(data))
-    return NextResponse.json({ error: "Invalid WEBP signature." }, { status: 415 });
+    return NextResponse.json({ error: "WEBP 文件签名无效。" }, { status: 415 });
   // Text is redacted server-side. Images are intentionally retained and made
   // available to the vision diagnosis flow without a separate confirmation step.
   let redactionStatus = file.type.startsWith("image/") ? "direct_upload" : "redacted";
