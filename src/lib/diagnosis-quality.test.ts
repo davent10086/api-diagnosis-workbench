@@ -8,6 +8,7 @@ const base = {
   hypotheses: ["其他路由未返回同类错误，已由上游响应排除。"],
   missing_evidence: [],
   customer_message: "已确认上游参数不兼容。",
+  root_cause_evidence: ["rule:openai-parameter-compatibility"],
 };
 
 describe("diagnosis conclusion gate", () => {
@@ -21,6 +22,11 @@ describe("diagnosis conclusion gate", () => {
     expect(result.conclusionStatus).toBe("provisional");
     expect(result.blockers.join(" ")).toContain("80%");
     expect(result.customerMessage).toContain("初步判断");
+  });
+
+  it("does not confirm a root cause without an explicit evidence binding", () => {
+    const result = adjudicateReport({ ...base, root_cause_evidence: [] }, [{ ruleId: "openai-parameter-compatibility", severity: "high", faultLayer: "adapter", conclusion: "unsupported", evidence: [], needsMoreEvidence: false }]);
+    expect(result.conclusionStatus).toBe("provisional");
   });
 
   it("keeps a ledger that distinguishes facts, candidates, and blockers", () => {

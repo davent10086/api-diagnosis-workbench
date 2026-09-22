@@ -15,6 +15,7 @@ type ReportLike = {
   hypotheses: string[];
   missing_evidence: string[];
   customer_message: string;
+  root_cause_evidence?: string[];
 };
 
 export function buildEvidenceLedger(
@@ -47,8 +48,12 @@ export function adjudicateReport(
     const match = /^rule:([^\s:=]+)/.exec(item.trim());
     return Boolean(match && definitiveRules.has(match[1]));
   });
+  const rootCauseEvidence = report.root_cause_evidence ?? [];
+  const rootCauseEvidenceIsConfirmed = rootCauseEvidence.length > 0 && rootCauseEvidence.every((item) => report.confirmed_evidence.includes(item));
   if (!report.confirmed_evidence.length)
     blockers.push("没有可追溯的已确认事实，不能确认根因。");
+  if (!rootCauseEvidenceIsConfirmed)
+    blockers.push("根因未绑定到已确认的具体证据；模型置信度不能替代证据链。");
   if (report.confidence < 80) blockers.push(`模型置信度 ${report.confidence}% 低于自动确认门槛 80%。`);
   if (!hasDefinitiveRuleCitation)
     blockers.push("根因缺少可确定性规则支撑；文本、截图或知识库片段本身只能作为候选证据。");

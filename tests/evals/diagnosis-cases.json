@@ -1,0 +1,12 @@
+[
+  {
+    "id": "example-rate-limit",
+    "expectedRootCauseTerms": ["配额", "限流"],
+    "requiredEvidence": ["rule:http-429"],
+    "report": {
+      "root_cause": "上游配额耗尽导致限流。",
+      "confirmed_evidence": ["rule:http-429"],
+      "root_cause_evidence": ["rule:http-429"]
+    }
+  }
+]

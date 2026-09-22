@@ -40,6 +40,7 @@ const reportSchema = z.object({
   missing_evidence: z.array(reportTextItem).max(8),
   next_actions: z.array(reportTextItem).min(1).max(8),
   customer_message: z.string().min(1).max(2000),
+  root_cause_evidence: z.array(reportTextItem).max(6).default([]),
 });
 export type AiReport = z.infer<typeof reportSchema>;
 export const reasoningEfforts = ["low", "high", "max"] as const;
@@ -131,7 +132,7 @@ function assertNotAborted(signal?: AbortSignal) {
       : new DOMException("Request cancelled", "AbortError");
 }
 export function validateEvidence(report: AiReport, context: EvidenceContext) {
-  for (const evidence of report.confirmed_evidence) {
+  for (const evidence of [...report.confirmed_evidence, ...report.root_cause_evidence]) {
     const [source, rawReference] = evidence.split(":", 2);
     const reference = rawReference?.split(/[=\s]/, 1)[0]?.replace(/\[\d+\].*$/, "");
     const matches = (values: Set<string>) =>
@@ -489,6 +490,14 @@ export async function runDiagnosis(
         .insert(diagnosisRuns)
         .values({ caseId, model, reasoningEffort, report: { state: "running" }, status: "running" })
         .returning({ id: diagnosisRuns.id });
+  const [checkpointRow] = resumedRunId
+    ? await db
+        .select({ report: diagnosisRuns.report })
+        .from(diagnosisRuns)
+        .where(eq(diagnosisRuns.id, resumedRunId))
+        .limit(1)
+    : [];
+  const modelCheckpoint = checkpointRow?.report as { state?: string; output?: AiReport } | undefined;
   await markWorkflowStep(
     run[0].id,
     "prepare",
@@ -572,6 +581,11 @@ export async function runDiagnosis(
           "你是一名严谨的 API 排障工程师。只可根据输入证据得出结论，不得将假设表述为已确认根因。所有面向读者的分析、建议和客户回复必须使用简体中文；错误码、请求 ID、Trace ID、模型名、API 字段名、URL 及原始证据必须保持原样。输出必须是符合用户要求字段的 JSON 对象，除 JSON 外不要输出任何内容。",
       },
       { role: "user", content: JSON.stringify(prompt) },
+      {
+        role: "user",
+        content:
+          "输出中必须包含 root_cause_evidence 数组。它只能引用 confirmed_evidence 中已有的 rule:<id>、trace:<field>、text:<id>、image:<id> 或 knowledge:<id>，且每一项必须直接支持 root_cause。",
+      },
     ];
     const parameters = {
       enable_thinking: true,
@@ -579,15 +593,20 @@ export async function runDiagnosis(
       response_format: { type: "json_object" },
     };
     activeNode = "model";
-    await markWorkflowStep(run[0].id, "model", "running");
-    const raw = await dashScopeCompletion(
-      "multimodal-generation",
-      model,
-      messages,
-      parameters,
-      signal,
-    );
-    let report = parseAiReport(raw);
+    let report = modelCheckpoint?.state === "model_completed" && modelCheckpoint.output
+      ? reportSchema.parse(modelCheckpoint.output)
+      : undefined;
+    if (!report) {
+      await markWorkflowStep(run[0].id, "model", "running");
+      const raw = await dashScopeCompletion(
+        "multimodal-generation",
+        model,
+        messages,
+        parameters,
+        signal,
+      );
+      report = parseAiReport(raw);
+    }
     if (!isChineseReport(report)) {
       const retry = await dashScopeCompletion(
         "multimodal-generation",
@@ -608,6 +627,10 @@ export async function runDiagnosis(
         throw new Error("Qwen 未返回中文诊断报告，请稍后重试或检查模型配置。");
     }
     await markWorkflowStep(run[0].id, "model", "completed", "model report received");
+    await db
+      .update(diagnosisRuns)
+      .set({ report: { state: "model_completed", output: report } })
+      .where(eq(diagnosisRuns.id, run[0].id));
     activeNode = "validate_and_persist";
     await markWorkflowStep(run[0].id, "validate_and_persist", "running");
     validateEvidence(report, {

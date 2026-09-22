@@ -13,6 +13,7 @@ const report = {
   missing_evidence: [],
   next_actions: ["检查配额"],
   customer_message: "正在处理。",
+  root_cause_evidence: ["rule:http-429"],
 };
 
 describe("parseAiReport", () => {
