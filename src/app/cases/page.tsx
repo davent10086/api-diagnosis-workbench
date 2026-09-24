@@ -63,19 +63,34 @@ export default async function CasesPage({ searchParams }: { searchParams: Promis
         </label>
         <button className="rounded bg-slate-800 px-4 py-2 text-sm text-white">查询</button>
       </form>
-      {rows.length ? <div className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+      {rows.length ? <div className="space-y-3">
         {rows.map((row) => {
           const trace = traceByCase.get(row.id);
           const run = runByCase.get(row.id);
-          const label = row.status === "uploading" ? "待补证据" : run?.status === "failed" ? "诊断失败" : run?.status === "running" || row.status === "analyzing" ? "诊断中" : run?.status === "completed" ? ({ confirmed: "已人工确认", rejected: "已驳回", corrected: "已修正" }[reviewByRun.get(run.id) ?? ""] ?? "待复核") : "待诊断";
-          return <Link href={`/cases/${row.id}`} key={row.id} className="block p-4 hover:bg-slate-50">
-            <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-semibold text-slate-900">{row.title}</h2><span className="rounded bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">{label}</span></div>
+          const review = run ? reviewByRun.get(run.id) : undefined;
+          const status = row.status === "uploading"
+            ? { label: "待补证据", className: "bg-amber-50 text-amber-800 ring-amber-200" }
+            : run?.status === "failed"
+              ? { label: "诊断失败", className: "bg-rose-50 text-rose-700 ring-rose-200" }
+              : run?.status === "running" || row.status === "analyzing"
+                ? { label: "诊断中", className: "bg-blue-50 text-blue-700 ring-blue-200" }
+                : run?.status === "completed"
+                  ? review === "confirmed"
+                    ? { label: "已人工确认", className: "bg-emerald-50 text-emerald-700 ring-emerald-200" }
+                    : review === "rejected"
+                      ? { label: "已驳回", className: "bg-rose-50 text-rose-700 ring-rose-200" }
+                      : review === "corrected"
+                        ? { label: "已修正", className: "bg-violet-50 text-violet-700 ring-violet-200" }
+                        : { label: "待复核", className: "bg-indigo-50 text-indigo-700 ring-indigo-200" }
+                  : { label: "待诊断", className: "bg-slate-100 text-slate-700 ring-slate-200" };
+          return <Link href={`/cases/${row.id}`} key={row.id} className="block rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300 hover:shadow-sm sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="font-semibold text-slate-900">{row.title}</h2><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${status.className}`}>{status.label}</span></div>
             {row.summary && <p className="mt-2 line-clamp-2 text-sm text-slate-600">{row.summary}</p>}
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
-              {trace?.requestId && <span>Request ID：<strong className="font-semibold text-slate-800">{trace.requestId}</strong></span>}
+            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-600">
+              {trace?.requestId && <span>Request ID：<strong className="font-mono font-semibold text-slate-800">{trace.requestId}</strong></span>}
               {trace?.statusCode != null && <span>HTTP：<strong className="font-semibold text-slate-800">{trace.statusCode}</strong></span>}
-              {trace?.model && <span>模型：{trace.model}</span>}
-              <span>更新于 {row.updatedAt.toLocaleString("zh-CN")}</span>
+              {trace?.model && <span>模型：<strong className="font-medium text-slate-700">{trace.model}</strong></span>}
+              <span className="text-slate-500">更新于 {row.updatedAt.toLocaleString("zh-CN")}</span>
             </div>
           </Link>;
         })}

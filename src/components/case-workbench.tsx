@@ -437,7 +437,7 @@ export function CaseWorkbench() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1280px] px-5 py-5 md:px-6 md:py-6">
+      <main className="mx-auto max-w-[1280px] px-5 py-5 pb-28 md:px-6 md:py-6 md:pb-28">
         <section className="panel mb-5 rounded-xl p-5 shadow-sm">
           <SectionHeading
             title="线索来源"
@@ -630,10 +630,10 @@ export function CaseWorkbench() {
                   ] as [keyof Metadata, string, string][]
                 ).map(([key, label, placeholder]) => (
                   <label
-                    className="grid grid-cols-[112px_1fr] items-center gap-2 py-2.5 text-xs"
+                    className="grid grid-cols-[112px_1fr] items-center gap-2 py-3 text-sm"
                     key={key}
                   >
-                    <span className="font-medium text-slate-500">
+                    <span className="font-medium text-slate-600">
                       {label}
                       {importedLog && key in importedLog.metadata && importedLog.metadata[key as keyof ImportedNewApiLog["metadata"]] && metadata[key] === importedLog.metadata[key as keyof ImportedNewApiLog["metadata"]] && (
                         <span className="block text-[10px] font-normal text-blue-700">来自 new-api</span>
@@ -643,7 +643,7 @@ export function CaseWorkbench() {
                       )}
                     </span>
                     <input
-                      className="min-w-0 border-0 bg-transparent p-0 text-right text-sm text-slate-800 placeholder:text-slate-300 focus:shadow-none"
+                      className="min-w-0 rounded-md border border-transparent bg-slate-50 px-2 py-1.5 text-right text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:border-blue-300 focus:bg-white focus:shadow-none"
                       value={metadata[key]}
                       onChange={(event) => updateMetadata(key, event.target.value)}
                       placeholder={placeholder}
@@ -757,7 +757,7 @@ export function CaseWorkbench() {
         </section>
       </main>
 
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 backdrop-blur">
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur">
         <div className="mx-auto flex max-w-[1280px] items-center justify-between gap-3 px-5 py-3 md:px-6">
           <span className="text-sm text-slate-500">
             已添加 <b className="font-semibold text-slate-800">{evidence.length}</b> 条证据
