@@ -78,6 +78,13 @@
       "when": 1790400000000,
       "tag": "0010_diagnosis_reviews",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790500000000,
+      "tag": "0011_pending_file_deletions",
+      "breakpoints": true
     }
   ]
 }

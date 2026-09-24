@@ -35,31 +35,54 @@ function containsFilter(keyword: string, vendor?: string) {
   return vendor ? and(ilike(documentChunks.vendor, vendor), match) : match;
 }
 function searchTerms(keyword: string) {
-  const expanded = keyword.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+  const expanded = keyword
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]/g, " ")
+    .replace(/\b\d{8}\b/g, "");
   return [...new Set(expanded.match(/[\p{L}\p{N}_-]+/gu) ?? [])]
     .map((term) => term.trim())
     .filter((term) => term.length >= 2)
     .slice(0, 8);
 }
+function termVariants(term: string) {
+  const translations: Record<string, string[]> = {
+    compatibility: ["兼容"],
+    authentication: ["鉴权"],
+    timeout: ["超时"],
+    throttling: ["限流"],
+  };
+  return [term, ...(translations[term.toLowerCase()] ?? [])];
+}
 function fallback(keyword: string, vendor?: string) {
   const terms = searchTerms(keyword);
-  const termMatches = terms.flatMap((term) => [
-    ilike(documentChunks.title, `%${term}%`),
-    ilike(documentChunks.category, `%${term}%`),
-    ilike(documentChunks.body, `%${term}%`),
-  ]);
-  const match = or(containsFilter(keyword), ...termMatches);
+  const termMatches = terms.map((term) => or(...termVariants(term).flatMap((variant) => [
+    ilike(documentChunks.title, `%${variant}%`),
+    ilike(documentChunks.category, `%${variant}%`),
+    ilike(documentChunks.body, `%${variant}%`),
+  ])));
+  const coverage = terms.length
+    ? sql<number>`${sql.join(termMatches.map((match) => sql`case when ${match} then 1 else 0 end`), sql` + `)}`
+    : sql<number>`0`;
+  // Multi-word queries should match more than one clue. A single common word
+  // such as "context" must not make an unrelated page about "canceled" rank.
+  const match = terms.length >= 2
+    ? sql`${coverage} >= 2`
+    : or(containsFilter(keyword), ...termMatches);
   const filter = vendor ? and(ilike(documentChunks.vendor, vendor), match) : match;
   const termBoost = sql.join(
     terms.map((term) => sql` + case when ${documentChunks.title} ilike ${`%${term}%`} then 20 when ${documentChunks.category} ilike ${`%${term}%`} then 10 when ${documentChunks.body} ilike ${`%${term}%`} then 1 else 0 end`),
   );
-  const boost = sql<number>`coalesce(${documentChunks.priority}, 0) + case when ${documentChunks.title} ilike ${`%${keyword}%`} then 40 when ${documentChunks.category} ilike ${`%${keyword}%`} then 20 else 0 end${termBoost}`;
+  const boost = sql<number>`coalesce(${documentChunks.priority}, 0) + ${coverage} * 30 + case when ${documentChunks.title} ilike ${`%${keyword}%`} then 40 when ${documentChunks.category} ilike ${`%${keyword}%`} then 20 else 0 end${termBoost}`;
   return db.select({ id: documentChunks.id, title: documentChunks.title, vendor: documentChunks.vendor, category: documentChunks.category, sourceUrl: documentChunks.sourceUrl, body: documentChunks.body, score: boost }).from(documentChunks).where(filter).orderBy(desc(boost)).limit(12);
 }
 async function queryOnce(keyword: string, vendor?: string): Promise<{ items: KnowledgeHit[]; backend: KnowledgeSearchMeta["backend"]; error?: string }> {
   const text = sql<string>`concat_ws(' ', ${documentChunks.title}, ${documentChunks.category}, ${documentChunks.body})`;
   const filter = vendor ? and(ilike(documentChunks.vendor, vendor), sql`${text} &@ ${keyword}`) : sql`${text} &@ ${keyword}`;
   try {
+    if (searchTerms(keyword).length >= 2) {
+      const ranked = await fallback(keyword, vendor);
+      if (ranked.length) return { items: ranked, backend: "postgres-contains" };
+    }
     const items = await db.select({ id: documentChunks.id, title: documentChunks.title, vendor: documentChunks.vendor, category: documentChunks.category, sourceUrl: documentChunks.sourceUrl, body: documentChunks.body, score: sql<number>`pgroonga_score(tableoid, ctid) + coalesce(${documentChunks.priority}, 0)` }).from(documentChunks).where(filter).orderBy(desc(sql`pgroonga_score(tableoid, ctid) + coalesce(${documentChunks.priority}, 0)`)).limit(12);
     if (items.length) return { items, backend: "pgroonga" };
     return { items: await fallback(keyword, vendor), backend: "postgres-contains" };

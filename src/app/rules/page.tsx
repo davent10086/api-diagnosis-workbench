@@ -1,9 +1,9 @@
-import { Shell, Top } from "@/components/app-shell";
+import { Top } from "@/components/app-shell";
 import { ruleCatalog } from "@/lib/rules";
 
 export default function RulesPage() {
   return (
-    <Shell>
+    <>
       <Top title="规则中心" />
       <div className="page">
         <h1 className="page-title">规则中心</h1>
@@ -22,6 +22,6 @@ export default function RulesPage() {
           ))}
         </div>
       </div>
-    </Shell>
+    </>
   );
 }

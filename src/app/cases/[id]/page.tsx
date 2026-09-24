@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
+import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Shell, Top } from "@/components/app-shell";
+import { Top } from "@/components/app-shell";
 import { ResumeCase } from "@/components/workbench/resume-case";
 import { DiagnosisRunner } from "@/components/diagnosis-runner";
 import { db } from "@/db/client";
@@ -12,14 +13,16 @@ import {
   cases,
   citations,
   diagnosisRuns,
+  diagnosisReviews,
   diagnosisWorkflowSteps,
   evidenceAssets,
   ruleFindings,
 } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
-export default async function Detail({ params }: { params: Promise<{ id: string }> }) {
+export default async function Detail({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ run?: string }> }) {
   const { id } = await params;
+  const { run: selectedRunId } = await searchParams;
   let item;
   try {
     [item] = await db
@@ -41,7 +44,7 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
     db.select().from(ruleFindings).where(eq(ruleFindings.caseId, id)),
     db.select().from(evidenceAssets).where(eq(evidenceAssets.caseId, id)),
     db
-      .select({ customerQuestion: apiTraces.customerQuestion })
+      .select({ customerQuestion: apiTraces.customerQuestion, requestId: apiTraces.requestId, statusCode: apiTraces.statusCode, model: apiTraces.model })
       .from(apiTraces)
       .where(eq(apiTraces.caseId, id))
       .limit(1),
@@ -50,22 +53,24 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
       .from(diagnosisRuns)
       .where(eq(diagnosisRuns.caseId, id))
       .orderBy(desc(diagnosisRuns.createdAt))
-      .limit(1),
+      .limit(20),
   ]);
   const latestRun = runs[0];
-  const runCitations = latestRun
-    ? await db.select().from(citations).where(eq(citations.diagnosisId, latestRun.id))
+  const displayRun = runs.find((run) => run.id === selectedRunId) ?? latestRun;
+  const runCitations = displayRun
+    ? await db.select().from(citations).where(eq(citations.diagnosisId, displayRun.id))
     : [];
-  const workflowSteps = latestRun
+  const workflowSteps = displayRun
     ? await db
         .select()
         .from(diagnosisWorkflowSteps)
-        .where(eq(diagnosisWorkflowSteps.diagnosisId, latestRun.id))
+        .where(eq(diagnosisWorkflowSteps.diagnosisId, displayRun.id))
     : [];
+  const reviews = displayRun ? await db.select().from(diagnosisReviews).where(eq(diagnosisReviews.diagnosisId, displayRun.id)).orderBy(desc(diagnosisReviews.createdAt)) : [];
   const aiReport =
-    latestRun?.status === "completed" ? (latestRun.report as Record<string, unknown>) : null;
+    displayRun?.status === "completed" ? (displayRun.report as Record<string, unknown>) : null;
   return (
-    <Shell>
+    <>
       <Top title="案件详情" />
       <div className="page max-w-5xl space-y-5">
         <section className="border-b border-slate-200 pb-5">
@@ -79,6 +84,11 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
           </p>
           <p className="mt-4">{item.summary}</p>
           <p className="mt-3 text-sm">{item.finalConclusion}</p>
+          {traces[0] && <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
+            {traces[0].requestId && <span>Request ID：<strong className="text-slate-900">{traces[0].requestId}</strong></span>}
+            {traces[0].statusCode != null && <span>HTTP：<strong className="text-slate-900">{traces[0].statusCode}</strong></span>}
+            {traces[0].model && <span>模型：{traces[0].model}</span>}
+          </p>}
         </section>
         {traces[0]?.customerQuestion && (
           <section className="border-b border-slate-200 pb-5">
@@ -97,22 +107,28 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
             。规则结果仍可作为人工排障依据。
           </section>
         )}
-        {latestRun && (
+        {runs.length > 0 && <section className="border-b border-slate-200 pb-5">
+          <h2 className="font-semibold">诊断历史</h2>
+          <div className="mt-2 flex flex-wrap gap-2">{runs.map((run) => <Link key={run.id} href={`/cases/${id}?run=${run.id}`} aria-current={displayRun?.id === run.id ? "page" : undefined} className={`rounded border px-3 py-2 text-xs ${displayRun?.id === run.id ? "border-blue-500 bg-blue-50 text-blue-800" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+            {run.createdAt.toLocaleString("zh-CN")} · {run.status === "completed" ? "已完成" : run.status === "failed" ? "失败" : "进行中"} · {run.model ?? "未知模型"}
+          </Link>)}</div>
+        </section>}
+        {displayRun && (
           <p className="text-xs text-muted">
-            模型：{latestRun.model ?? "-"} · 推理强度：{latestRun.reasoningEffort ?? "-"}
+            模型：{displayRun.model ?? "-"} · 推理强度：{displayRun.reasoningEffort ?? "-"}
           </p>
         )}
-        {latestRun && (
+        {displayRun && (
           <>
-            <DiagnosisLiveRefresh active={latestRun.status === "running"} />
+            <DiagnosisLiveRefresh active={latestRun?.status === "running"} />
             <ExecutionLog
-              status={latestRun.status}
-              durationMs={latestRun.durationMs}
-              model={latestRun.model}
+              status={displayRun.status}
+              durationMs={displayRun.durationMs}
+              model={displayRun.model}
               findingCount={findings.length}
               assetCount={assets.length}
               citationCount={runCitations.length}
-              retrieval={(latestRun.report as { retrieval?: Record<string, unknown> }).retrieval}
+              retrieval={(displayRun.report as { retrieval?: Record<string, unknown> }).retrieval}
               workflowSteps={workflowSteps.map((step) => ({ nodeName: step.nodeName, status: step.status, summary: step.summary }))}
             />
           </>
@@ -134,15 +150,15 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
               </div>
               <div>
                 <h3 className="font-semibold">{String(aiReport.conclusion_status) === "confirmed" ? "根因判断" : "候选原因"}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-700">
+                <p className="mt-2 text-sm font-semibold leading-6 text-slate-800">
                   {String(aiReport.root_cause)}
                 </p>
               </div>
-              <ReportList title="已确认的证据" items={aiReport.confirmed_evidence} />
+              <ReportList title="已确认的证据" items={aiReport.confirmed_evidence} evidenceIds={new Set(Array.isArray(aiReport.evidence_ledger) ? aiReport.evidence_ledger.map((entry: { id?: unknown }) => String(entry.id)) : [])} />
               <ReportList title="确认阻断项" items={aiReport.confirmation_blockers} />
               <ReportList title="待验证假设" items={aiReport.hypotheses} />
               <ReportList title="缺失证据" items={aiReport.missing_evidence} />
-              <ReportList title="下一步操作" items={aiReport.next_actions} />
+              <ReportList title="下一步操作" items={aiReport.next_actions} emphasize />
               <div>
                 <h3 className="text-sm font-semibold">对外沟通建议</h3>
                 <p className="mt-2 border-l-2 border-slate-300 bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-700">
@@ -150,7 +166,8 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
                 </p>
               </div>
               <EvidenceLedger items={aiReport.evidence_ledger} />
-              <DiagnosisReview caseId={id} diagnosisId={latestRun.id} />
+              {reviews.length > 0 && <div className="rounded border border-slate-200 p-3 text-sm"><h3 className="font-semibold">复核记录</h3>{reviews.map((review) => <div key={review.id} className="mt-2 border-t border-slate-100 pt-2"><strong>{review.verdict === "confirmed" ? "已确认" : review.verdict === "rejected" ? "已驳回" : "已修正"}</strong> · {review.createdAt.toLocaleString("zh-CN")}{review.correctedRootCause && <p>修正根因：{review.correctedRootCause}</p>}{review.notes && <p>说明：{review.notes}</p>}</div>)}</div>}
+              <DiagnosisReview caseId={id} diagnosisId={displayRun.id} />
               {runCitations.length > 0 && (
                 <div>
                   <h3 className="text-sm font-semibold">官方资料引用</h3>
@@ -176,7 +193,7 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
             <p className="mt-2 text-sm text-muted">尚无附件。</p>
           ) : (
             assets.map((asset) => (
-              <p className="mt-2 text-sm" key={asset.id}>
+              <p className="mt-2 scroll-mt-24 text-sm" id={`asset-${asset.id}`} key={asset.id}>
                 {asset.extraction &&
                 typeof asset.extraction === "object" &&
                 "originalName" in asset.extraction
@@ -209,7 +226,7 @@ export default async function Detail({ params }: { params: Promise<{ id: string 
           )}
         </section>
       </div>
-    </Shell>
+    </>
   );
 }
 
@@ -219,7 +236,7 @@ function EvidenceLedger({ items }: { items: unknown }) {
   return <div>
     <h3 className="text-sm font-semibold">证据账本</h3>
     <ul className="mt-2 divide-y divide-slate-100 rounded border border-slate-100">
-      {values.map((item, index) => <li className="p-2 text-xs text-slate-700" key={`${String(item.id)}-${index}`}><b>{evidenceKindLabel(String(item.kind))}</b> · {evidenceIdLabel(String(item.id))}<br />{String(item.statement)}</li>)}
+      {values.map((item, index) => <li id={`evidence-${encodeURIComponent(String(item.id))}`} className="scroll-mt-24 p-2 text-xs text-slate-700" key={`${String(item.id)}-${index}`}><b>{evidenceKindLabel(String(item.kind))}</b> · {evidenceIdLabel(String(item.id))}<br />{String(item.statement)}</li>)}
     </ul>
   </div>;
 }
@@ -335,7 +352,7 @@ function workflowSummaryLabel(summary: string) {
   return summary;
 }
 
-function ReportList({ title, items }: { title: string; items: unknown }) {
+function ReportList({ title, items, evidenceIds, emphasize = false }: { title: string; items: unknown; evidenceIds?: Set<string>; emphasize?: boolean }) {
   const values = Array.isArray(items) ? items : [];
   if (!values.length) return null;
   return (
@@ -343,8 +360,13 @@ function ReportList({ title, items }: { title: string; items: unknown }) {
       <h3 className="text-sm font-semibold">{title}</h3>
       <ul className="mt-2 divide-y divide-slate-100">
         {values.map((item, index) => (
-          <li className="py-2 text-sm leading-6 text-slate-700" key={index}>
-            {evidenceIdLabel(String(item))}
+          <li className={`py-2 text-sm leading-6 text-slate-700 ${emphasize ? "font-medium" : ""}`} key={index}>
+            {(() => {
+              const value = String(item);
+              const reference = value.split(/[=\s]/, 1)[0];
+              const sourceId = [...(evidenceIds ?? [])].filter((id) => reference.startsWith(id)).sort((a, b) => b.length - a.length)[0];
+              return sourceId ? <a href={`#evidence-${encodeURIComponent(sourceId)}`} className="text-blue-700 underline-offset-2 hover:underline">{evidenceIdLabel(value)}</a> : evidenceIdLabel(value);
+            })()}
           </li>
         ))}
       </ul>

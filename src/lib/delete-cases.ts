@@ -1,7 +1,7 @@
-import { rm } from "fs/promises";
 import { inArray, or } from "drizzle-orm";
 import { db } from "@/db/client";
 import { isManagedStoragePath } from "@/lib/storage";
+import { cleanupPendingFileDeletions } from "@/lib/evidence-cleanup";
 import {
   apiTraces,
   caseLinks,
@@ -11,13 +11,14 @@ import {
   diagnosisRuns,
   diagnosisWorkflowSteps,
   evidenceAssets,
+  pendingFileDeletions,
   extractedFields,
   ruleFindings,
 } from "@/db/schema";
 
 export async function deleteCases(caseIds: string[]) {
   if (!caseIds.length) return 0;
-  const assets = await db.transaction(async (tx) => {
+  const { count, deletionIds } = await db.transaction(async (tx) => {
     // Read every dependent row in the same transaction that removes it. This
     // prevents a worker from adding a child row between discovery and delete.
     const targets = await tx
@@ -31,6 +32,10 @@ export async function deleteCases(caseIds: string[]) {
       .select({ id: evidenceAssets.id, filePath: evidenceAssets.filePath })
       .from(evidenceAssets)
       .where(inArray(evidenceAssets.caseId, caseIds));
+    const managed = assets.filter((asset) => isManagedStoragePath(asset.filePath));
+    const deletions = managed.length
+      ? await tx.insert(pendingFileDeletions).values(managed.map((asset) => ({ filePath: asset.filePath }))).returning({ id: pendingFileDeletions.id })
+      : [];
     const runs = await tx
       .select({ id: diagnosisRuns.id })
       .from(diagnosisRuns)
@@ -65,14 +70,8 @@ export async function deleteCases(caseIds: string[]) {
     await tx.delete(apiTraces).where(inArray(apiTraces.caseId, caseIds));
     await tx.delete(diagnosisRuns).where(inArray(diagnosisRuns.caseId, caseIds));
     await tx.delete(cases).where(inArray(cases.id, caseIds));
-    return assets;
+    return { count: targets.length, deletionIds: deletions.map((entry) => entry.id) };
   });
-  await Promise.all(
-    assets.map((asset) =>
-      isManagedStoragePath(asset.filePath)
-        ? rm(asset.filePath, { force: true }).catch(() => undefined)
-        : undefined,
-    ),
-  );
-  return caseIds.length;
+  if (deletionIds.length) await cleanupPendingFileDeletions(deletionIds).catch(() => undefined);
+  return count;
 }

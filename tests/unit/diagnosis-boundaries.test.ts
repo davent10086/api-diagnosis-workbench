@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAiReport, parseDashScopeContent, validateEvidence, workflowSummary } from "@/lib/diagnosis";
+import { parseAiReport, parseOpenAICompatibleContent, validateEvidence, workflowSummary } from "@/lib/diagnosis";
 
 const report = {
   summary: "上游返回限流", root_cause: "配额不足", severity: "high", fault_layer: "provider",
@@ -16,8 +16,8 @@ describe("diagnosis boundary validation", () => {
     expect(() => validateEvidence(parsed, { ruleIds: new Set(["http-429"]), knowledgeIds: new Set(), imageIds: new Set(), textEvidenceIds: new Set(), traceReferences: new Set() })).toThrow("Invalid evidence reference");
   });
   it("normalizes supported DashScope content shapes without accepting empty choices", () => {
-    expect(parseDashScopeContent({ output: { choices: [{ message: { content: [{ text: "报告" }, { text: "正文" }] } }] } })).toBe("报告正文");
-    expect(() => parseDashScopeContent({ output: { choices: [] } })).toThrow("did not return content");
+    expect(parseOpenAICompatibleContent({ choices: [{ message: { content: [{ text: "报告" }, { text: "正文" }] } }] })).toBe("报告正文");
+    expect(() => parseOpenAICompatibleContent({ choices: [] })).toThrow("未返回正文");
   });
   it("classifies rate limits, cancellation and network failures", () => {
     expect(workflowSummary(new Error("HTTP 429"))).toBe("upstream rate limited");

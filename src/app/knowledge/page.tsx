@@ -1,8 +1,8 @@
-import { Shell, Top } from "@/components/app-shell";
+import { Top } from "@/components/app-shell";
 import { KnowledgeSearch } from "@/components/knowledge-search";
 export default function Knowledge() {
   return (
-    <Shell>
+    <>
       <Top title={"\u5b98\u65b9\u77e5\u8bc6\u5e93"} />
       <div className="page">
         <h1 className="page-title">{"\u5b98\u65b9\u77e5\u8bc6\u5e93"}</h1>
@@ -13,6 +13,6 @@ export default function Knowledge() {
         </p>
         <KnowledgeSearch />
       </div>
-    </Shell>
+    </>
   );
 }

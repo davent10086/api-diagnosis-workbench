@@ -69,6 +69,11 @@ type Metadata = {
   occurredAt: string;
 };
 
+type ImportedNewApiLog = {
+  metadata: Pick<Metadata, "model" | "requestId" | "upstreamRequestId" | "occurredAt">;
+  context: string;
+};
+
 const evidenceLabels: Record<EvidenceType, string> = {
   customer_chat: "客户聊天",
   request: "请求体",
@@ -129,7 +134,10 @@ export function CaseWorkbench() {
   const [question, setQuestion] = useState("");
   const [evidence, setEvidence] = useState<Evidence[]>([]);
   const [metadata, setMetadata] = useState<Metadata>(emptyMetadata);
+  const [importedLog, setImportedLog] = useState<ImportedNewApiLog | null>(null);
+  const [importingLog, setImportingLog] = useState(false);
   const [showRules, setShowRules] = useState(false);
+  const [showImportedLog, setShowImportedLog] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
   const [advanced, setAdvanced] = useState({
@@ -186,12 +194,12 @@ export function CaseWorkbench() {
     const list: string[] = [];
     if (!question.trim() && !types.has("customer_chat")) list.push("客户问题");
     if (!types.has("request") && !types.has("trace")) list.push("请求体");
-    if (!types.has("backend_log")) list.push("后台日志");
+    if (!types.has("backend_log") && !importedLog) list.push("后台日志");
     if (!types.has("response") && !types.has("sse")) list.push("响应体");
     if (!metadata.requestId) list.push("Request ID");
     if (!metadata.occurredAt) list.push("发生时间");
     return list;
-  }, [evidence, metadata.occurredAt, metadata.requestId, question]);
+  }, [evidence, importedLog, metadata.occurredAt, metadata.requestId, question]);
 
   async function addFiles(files: File[], source: Evidence["source"] = "upload") {
     const accepted: Evidence[] = [];
@@ -265,7 +273,33 @@ export function CaseWorkbench() {
   }
 
   function updateMetadata(key: keyof Metadata, value: string) {
+    if (key === "requestId" && value !== importedLog?.metadata.requestId) setImportedLog(null);
     setMetadata((current) => ({ ...current, [key]: value }));
+  }
+
+  async function importNewApiLog() {
+    const requestId = metadata.requestId.trim();
+    if (!requestId) {
+      setToast("请先填写 Request ID。");
+      return;
+    }
+    setImportingLog(true);
+    try {
+      const response = await fetch(
+        `/api/integrations/new-api/log?request_id=${encodeURIComponent(requestId)}`,
+        { cache: "no-store" },
+      );
+      const result: ImportedNewApiLog | { error: string } = await response.json();
+      if (!response.ok || "error" in result)
+        throw new Error("error" in result ? result.error : "导入失败。");
+      setImportedLog(result);
+      setMetadata((current) => ({ ...current, ...result.metadata }));
+      setToast("已导入 new-api 日志，请核对并补充请求和响应证据。");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "导入失败。");
+    } finally {
+      setImportingLog(false);
+    }
   }
 
   function validateTrace(value: string) {
@@ -280,7 +314,7 @@ export function CaseWorkbench() {
 
   async function submitCase(action: "draft" | "diagnosis") {
     if (submitting) return;
-    if (action === "diagnosis" && !question.trim() && evidence.length === 0) {
+    if (action === "diagnosis" && !question.trim() && evidence.length === 0 && !importedLog) {
       setToast("请填写客户问题，或至少添加 1 条证据后再开始诊断。");
       return;
     }
@@ -296,7 +330,10 @@ export function CaseWorkbench() {
         name: file.name,
         size: file.size,
       })),
-      advanced,
+      advanced: {
+        ...advanced,
+        context: [advanced.context, importedLog?.context].filter(Boolean).join("\n\n"),
+      },
     };
     const controller = new AbortController();
     requestController.current = controller;
@@ -361,7 +398,7 @@ export function CaseWorkbench() {
       Boolean(question.trim() || evidence.some((item) => item.type === "customer_chat")),
     ],
     ["请求体", evidence.some((item) => item.type === "request" || item.type === "trace")],
-    ["后台日志", evidence.some((item) => item.type === "backend_log")],
+    ["后台日志", Boolean(importedLog) || evidence.some((item) => item.type === "backend_log")],
     ["响应体", evidence.some((item) => item.type === "response" || item.type === "sse")],
     ["Request ID", Boolean(metadata.requestId)],
     ["发生时间", Boolean(metadata.occurredAt)],
@@ -401,9 +438,34 @@ export function CaseWorkbench() {
       </header>
 
       <main className="mx-auto max-w-[1280px] px-5 py-5 md:px-6 md:py-6">
+        <section className="panel mb-5 rounded-xl p-5 shadow-sm">
+          <SectionHeading
+            title="线索来源"
+            description="有 new-api Request ID 时可先查询日志；也可以直接手动录入问题和证据。"
+          />
+          <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+            <label className="block text-sm font-medium text-slate-700">
+              <span>从 new-api 查询</span>
+              <input
+                className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400"
+                value={metadata.requestId}
+                onChange={(event) => updateMetadata("requestId", event.target.value)}
+                onKeyDown={(event) => { if (event.key === "Enter") void importNewApiLog(); }}
+                placeholder="输入 Request ID"
+              />
+            </label>
+            <button className="btn btn-primary" disabled={importingLog || !metadata.requestId.trim()} onClick={() => void importNewApiLog()}>
+              {importingLog ? "查询中…" : "查询日志"}
+            </button>
+          </div>
+          <p className="mt-3 text-xs text-slate-500">
+            没有 Request ID？<a className="font-medium text-blue-700 hover:underline" href="#manual-evidence">直接手动录入</a>。
+            查询只执行一次，不会自动同步 new-api 后续日志。
+          </p>
+        </section>
         <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
           <div className="space-y-5">
-            <section className="panel rounded-xl p-5 shadow-sm">
+            <section id="manual-evidence" className="panel rounded-xl p-5 shadow-sm">
               <SectionHeading
                 title="客户问题"
                 description="粘贴客户原话、聊天内容，或直接粘贴微信截图。"
@@ -450,6 +512,27 @@ export function CaseWorkbench() {
                 title="排障证据"
                 description="直接拖入截图、请求文件和日志，系统将在诊断时统一分析。"
               />
+              {importedLog && (
+                <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-slate-700">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-900">new-api 日志</p>
+                      <p className="mt-1 text-xs text-slate-600">来源：new-api · Request ID：{importedLog.metadata.requestId}</p>
+                    </div>
+                    <button className="text-xs text-slate-600 underline" onClick={() => setImportedLog(null)}>移除日志</button>
+                  </div>
+                  <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+                    <div><dt className="text-slate-500">发生时间</dt><dd>{importedLog.metadata.occurredAt || "未提供"}</dd></div>
+                    <div><dt className="text-slate-500">模型</dt><dd>{importedLog.metadata.model || "未提供"}</dd></div>
+                    <div><dt className="text-slate-500">渠道</dt><dd>{importedLog.context.split("\n").find((line) => line.startsWith("channel_name="))?.slice(13) || importedLog.context.split("\n").find((line) => line.startsWith("channel_id="))?.slice(11) || "未提供"}</dd></div>
+                  </dl>
+                  <button className="mt-3 text-xs font-medium text-blue-700 hover:underline" onClick={() => setShowImportedLog((value) => !value)} aria-expanded={showImportedLog}>
+                    {showImportedLog ? "收起日志内容" : "查看日志内容"}
+                  </button>
+                  {showImportedLog && <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-white p-3 text-xs text-slate-600">{importedLog.context}</pre>}
+                  <p className="mt-3 text-xs text-amber-800">new-api 日志可能没有完整请求体、上游响应体和准确状态码，请核对并补充。</p>
+                </div>
+              )}
               <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
                 <button className="btn btn-primary" onClick={() => inputRef.current?.click()}>
                   <Upload size={15} />
@@ -533,7 +616,7 @@ export function CaseWorkbench() {
             <section className="panel rounded-xl p-5 shadow-sm">
               <SectionHeading
                 title="案件信息"
-                description="可手动填写；未来将由 Vision AI 辅助识别。"
+                description="核对自动带入的信息，并补充日志未提供的字段。"
               />
               <div className="mt-4 divide-y divide-slate-100">
                 {(
@@ -542,7 +625,6 @@ export function CaseWorkbench() {
                     ["model", "Model", "claude-3-7-sonnet"],
                     ["route", "Route", "/v1/messages"],
                     ["statusCode", "Status Code", "400"],
-                    ["requestId", "Request ID", "req_bedrock_2026"],
                     ["upstreamRequestId", "Upstream Request ID", "可选"],
                     ["occurredAt", "发生时间", "2026-09-20 10:30"],
                   ] as [keyof Metadata, string, string][]
@@ -551,7 +633,15 @@ export function CaseWorkbench() {
                     className="grid grid-cols-[112px_1fr] items-center gap-2 py-2.5 text-xs"
                     key={key}
                   >
-                    <span className="font-medium text-slate-500">{label}</span>
+                    <span className="font-medium text-slate-500">
+                      {label}
+                      {importedLog && key in importedLog.metadata && importedLog.metadata[key as keyof ImportedNewApiLog["metadata"]] && metadata[key] === importedLog.metadata[key as keyof ImportedNewApiLog["metadata"]] && (
+                        <span className="block text-[10px] font-normal text-blue-700">来自 new-api</span>
+                      )}
+                      {importedLog && !metadata[key] && (key === "statusCode" || key === "route") && (
+                        <span className="block text-[10px] font-normal text-amber-700">待补充</span>
+                      )}
+                    </span>
                     <input
                       className="min-w-0 border-0 bg-transparent p-0 text-right text-sm text-slate-800 placeholder:text-slate-300 focus:shadow-none"
                       value={metadata[key]}
@@ -561,9 +651,9 @@ export function CaseWorkbench() {
                   </label>
                 ))}
               </div>
-              <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-400">
+              <p className="mt-3 flex items-center gap-1.5 text-xs text-slate-500">
                 <Info size={13} />
-                识别字段将在后续多模态分析中回填（预留）。
+                Request ID 可在页面顶部查询；再次查询会覆盖 new-api 返回的字段。
               </p>
             </section>
             <section className="panel rounded-xl p-5 shadow-sm">

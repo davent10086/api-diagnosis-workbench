@@ -42,6 +42,11 @@ export const evidenceAssets = pgTable(
   },
   (t) => [index("evidence_case_idx").on(t.caseId)],
 );
+export const pendingFileDeletions = pgTable("pending_file_deletions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  filePath: text("file_path").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
 export const apiTraces = pgTable(
   "api_traces",
   {

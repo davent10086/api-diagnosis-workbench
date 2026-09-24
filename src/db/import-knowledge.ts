@@ -34,19 +34,26 @@ function parse(raw: string, file: string): Chunk[] {
   const parts = content.split(/(?=^#{1,3}\s+)/m).filter(Boolean);
   const vendor = file.split(/[\\/]/)[0].replaceAll("-", " ");
   return parts
-    .map((part, i) => {
+    .flatMap((part, i) => {
       const lines = part.trim().split("\n");
       const heading = lines[0].replace(/^#+\s*/, "").trim();
-      return {
-        title: heading || file,
-        body: part.trim().slice(0, 5000),
-        vendor,
-        category: file.replace(/\.md$/, ""),
-        sourceUrl: source,
-        priority: i === 0 ? 10 : 5,
-      };
+      const body = part.trim();
+      if (body.length <= 30) return [];
+      const chunks: Chunk[] = [];
+      for (let start = 0; start < body.length; start += 5000) {
+        const partNumber = chunks.length + 1;
+        chunks.push({
+          title: partNumber === 1 ? heading || file : `${heading || file} (part ${partNumber})`,
+          body: body.slice(start, start + 5000),
+          vendor,
+          category: file.replace(/\.md$/, ""),
+          sourceUrl: source,
+          priority: i === 0 && partNumber === 1 ? 10 : 5,
+        });
+      }
+      return chunks;
     })
-    .filter((x) => x.body.length > 30);
+    .filter((x) => x.body.length > 0);
 }
 async function main() {
   if (!root) throw new Error("KNOWLEDGE_BASE_PATH 未配置");

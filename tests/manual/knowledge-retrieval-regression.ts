@@ -7,6 +7,7 @@ type Scenario = {
   query: string;
   vendor: string;
   expectedTitle: RegExp;
+  expectedSource?: RegExp;
 };
 
 const scenarios: Scenario[] = [
@@ -20,10 +21,19 @@ const scenarios: Scenario[] = [
   { name: "火山 OpenAI 兼容", query: "OpenAI compatibility", vendor: "volcengine", expectedTitle: /openai/i },
   { name: "智谱鉴权", query: "API Key 鉴权", vendor: "zhipu", expectedTitle: /auth|key|鉴权/i },
   { name: "OpenRouter 模型路由", query: "model routing", vendor: "openrouter", expectedTitle: /routing|路由/i },
+  { name: "Bedrock 参数错误", query: "400 ValidationError", vendor: "aws", expectedTitle: /^ValidationError$/i },
+  { name: "Bedrock 限流", query: "429 ThrottlingException", vendor: "bedrock", expectedTitle: /^ThrottlingException$/i },
+  { name: "Bedrock 预置工具", query: "web_search_20250305", vendor: "aws", expectedTitle: /Endpoints supported by Amazon Bedrock/i },
+  { name: "Bedrock 连接重置", query: "connection reset", vendor: "bedrock", expectedTitle: /Connection timeout or reset/i },
+  { name: "Claude 参数兼容", query: "temperature top_p", vendor: "aws", expectedTitle: /Request and Response/i, expectedSource: /model-parameters-anthropic-claude-messages-request-response/ },
+  { name: "Claude 工具流", query: "fine-grained tool streaming", vendor: "aws", expectedTitle: /Fine-grained tool streaming/i, expectedSource: /model-parameters-anthropic-claude-messages-tool-use/ },
+  { name: "ConverseStream 能力", query: "ConverseStream responseStreamingSupported", vendor: "aws", expectedTitle: /ConverseStream/i, expectedSource: /API_runtime_ConverseStream/ },
+  { name: "Bedrock 容量错误", query: "429 503 529", vendor: "aws", expectedTitle: /Summary of recommendations|Understanding HTTP error responses/i, expectedSource: /scaling-throughput-best-practices/ },
+  { name: "Bedrock 令牌配额", query: "tokens per minute TPM", vendor: "aws", expectedTitle: /How tokens are counted/i, expectedSource: /quotas-token-burndown/ },
 ];
 
 async function main() {
-  const { searchKnowledgeDetailed } = await import("../../src/lib/knowledge");
+  const { normalizeKnowledgeVendor, searchKnowledgeDetailed } = await import("../../src/lib/knowledge");
   const { db } = await import("../../src/db/client");
   const { documentChunks } = await import("../../src/db/schema");
   const { count } = await import("drizzle-orm");
@@ -40,9 +50,10 @@ async function main() {
   for (const scenario of scenarios) {
     const result = await searchKnowledgeDetailed(scenario.query, scenario.vendor);
     const top = result.items[0];
-    const vendorMatched = top?.vendor.toLowerCase() === scenario.vendor;
-    const topTitleMatched = Boolean(top && scenario.expectedTitle.test(top.title));
-    const titleMatched = result.items.slice(0, 5).some((item) => scenario.expectedTitle.test(item.title));
+    const vendorMatched = top?.vendor.toLowerCase() === normalizeKnowledgeVendor(scenario.vendor);
+    const matches = (item: typeof top) => Boolean(item && scenario.expectedTitle.test(item.title) && (!scenario.expectedSource || scenario.expectedSource.test(item.sourceUrl)));
+    const topTitleMatched = matches(top);
+    const titleMatched = result.items.slice(0, 5).some(matches);
     rows.push({
       scenario: scenario.name,
       query: scenario.query,
@@ -62,6 +73,9 @@ async function main() {
   const precisionAt1 = rows.filter((row) => row.precisionAt1).length;
   const recallAt5 = rows.filter((row) => row.recallAt5).length;
   console.log(`Knowledge retrieval regression: Precision@1 ${precisionAt1}/${rows.length}; Recall@5 ${recallAt5}/${rows.length}`);
+  const unrelated = await searchKnowledgeDetailed("context canceled");
+  console.log(`Unrelated partial matches for "context canceled": ${unrelated.items.length}`);
+  if (unrelated.items.length) process.exitCode = 1;
   if (recallAt5 !== rows.length) process.exitCode = 1;
 }
 

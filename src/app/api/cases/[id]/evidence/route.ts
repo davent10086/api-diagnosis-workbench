@@ -56,7 +56,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   let data = Buffer.from(await file.arrayBuffer());
   if (!validImageSignature(mimeType, data)) return NextResponse.json({ error: "图片内容与文件类型不匹配。" }, { status: 415 });
 
-  let redactionStatus = mimeType.startsWith("image/") ? "direct_upload" : "redacted";
+  const redactionStatus = mimeType.startsWith("image/") ? "direct_upload" : "redacted";
   if (mimeType === "application/json") {
     try {
       const { redactValue } = await import("@/lib/redaction");

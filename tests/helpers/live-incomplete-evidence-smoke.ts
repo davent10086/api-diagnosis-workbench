@@ -16,16 +16,20 @@ export async function runLiveDiagnosisSmoke() {
   ]);
   let caseId: string | undefined;
   try {
+  const tokenLimitScenario = process.env.LIVE_DIAGNOSIS_SCENARIO === "token-limit";
   const [item] = await db
     .insert(schema.cases)
-    .values({ title: "live smoke: incomplete 502 evidence", status: "completed" })
+    .values({ title: `live smoke: ${tokenLimitScenario ? "token-limit" : "incomplete-502"}`, status: "completed" })
     .returning({ id: schema.cases.id });
   caseId = item.id;
   await db.insert(schema.apiTraces).values({
     caseId,
-    provider: "Bedrock",
-    route: "bedrock",
-    statusCode: 502,
+    provider: tokenLimitScenario ? "Anthropic" : "Bedrock",
+    route: tokenLimitScenario ? "anthropic" : "bedrock",
+    statusCode: tokenLimitScenario ? 400 : 502,
+    customerQuestion: tokenLimitScenario
+      ? "status_code=400, prompt is too long: 263839 tokens > 200000 maximum"
+      : undefined,
   });
   const result = await runDiagnosis(caseId, "low");
   const [run] = await db

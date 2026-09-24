@@ -1,9 +1,9 @@
-import { Shell, Top } from "@/components/app-shell";
+import { Top } from "@/components/app-shell";
 
 export default function SettingsPage() {
   const databaseConfigured = Boolean(process.env.DATABASE_URL);
   return (
-    <Shell>
+    <>
       <Top title="设置" />
       <div className="page">
         <h1 className="page-title">本地设置</h1>
@@ -22,6 +22,6 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
-    </Shell>
+    </>
   );
 }

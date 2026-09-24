@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Activity, BookOpen, FileText, Settings, ShieldCheck, ChartNoAxesCombined } from "lucide-react";
@@ -13,6 +14,8 @@ const navigation = [
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  useEffect(() => setPendingHref(null), [pathname]);
   return (
     <div className="min-h-screen md:grid md:grid-cols-[220px_1fr]">
       <aside className="border-b border-slate-800 bg-navy px-3 py-4 text-slate-300 md:min-h-screen md:border-b-0 md:border-r">
@@ -20,11 +23,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <p className="mb-2 mt-7 px-2 text-[11px] font-medium text-slate-500">工作台</p>
         <nav className="grid grid-cols-2 gap-1 md:block md:space-y-1">
           {navigation.map(([name, href, Icon]) => (
-            <Link className={`flex items-center gap-2 border-l-2 px-2 py-2 text-sm transition ${pathname === href || (href === "/cases" && pathname.startsWith("/cases")) ? "border-blue-400 bg-white/[0.07] text-white" : "border-transparent hover:bg-white/[0.04] hover:text-white"}`} href={href} key={href}>
+            <Link aria-current={pathname === href ? "page" : undefined} className={`flex items-center gap-2 border-l-2 px-2 py-2 text-sm transition ${pathname === href || (href === "/cases" && pathname.startsWith("/cases")) ? "border-blue-400 bg-white/[0.07] text-white" : "border-transparent hover:bg-white/[0.04] hover:text-white"}`} href={href} key={href} onClick={() => setPendingHref(href === pathname ? null : href)}>
               <Icon size={15} className="text-slate-400" />{name}
             </Link>
           ))}
         </nav>
+        {pendingHref && <p aria-live="polite" className="mt-3 px-2 text-xs text-slate-300">正在打开页面…</p>}
         <p className="mt-8 hidden border-t border-slate-800 px-2 pt-3 text-xs leading-5 text-slate-500 md:block">证据仅保存在当前设备。</p>
       </aside>
       <main>{children}</main>
