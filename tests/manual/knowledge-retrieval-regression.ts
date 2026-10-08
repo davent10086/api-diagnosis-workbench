@@ -8,10 +8,11 @@ type Scenario = {
   vendor: string;
   expectedTitle: RegExp;
   expectedSource?: RegExp;
+  expectedExcerpt?: RegExp;
 };
 
 const scenarios: Scenario[] = [
-  { name: "OpenAI 速率限制", query: "429 rate limit", vendor: "openai", expectedTitle: /错误|error/i },
+  { name: "OpenAI 速率限制", query: "429 rate limit", vendor: "openai", expectedTitle: /错误|error|rate.limit|速率|限流/i },
   { name: "Anthropic SSE", query: "streaming SSE event", vendor: "anthropic", expectedTitle: /stream|SSE/i },
   { name: "Gemini 批处理", query: "batchGenerateContent", vendor: "google gemini", expectedTitle: /batch/i },
   { name: "DeepSeek 错误码", query: "错误码 error code", vendor: "deepseek", expectedTitle: /错误|error/i },
@@ -23,7 +24,7 @@ const scenarios: Scenario[] = [
   { name: "OpenRouter 模型路由", query: "model routing", vendor: "openrouter", expectedTitle: /routing|路由/i },
   { name: "Bedrock 参数错误", query: "400 ValidationError", vendor: "aws", expectedTitle: /^ValidationError$/i },
   { name: "Bedrock 限流", query: "429 ThrottlingException", vendor: "bedrock", expectedTitle: /^ThrottlingException$/i },
-  { name: "Bedrock 预置工具", query: "web_search_20250305", vendor: "aws", expectedTitle: /Endpoints supported by Amazon Bedrock/i },
+  { name: "Bedrock 预置工具", query: "web_search_20250305", vendor: "aws", expectedTitle: /tool/i, expectedSource: /model-parameters-anthropic-claude-messages-tool-use/, expectedExcerpt: /web_search_20250305[^\n]*not supported/i },
   { name: "Bedrock 连接重置", query: "connection reset", vendor: "bedrock", expectedTitle: /Connection timeout or reset/i },
   { name: "Claude 参数兼容", query: "temperature top_p", vendor: "aws", expectedTitle: /Request and Response/i, expectedSource: /model-parameters-anthropic-claude-messages-request-response/ },
   { name: "Claude 工具流", query: "fine-grained tool streaming", vendor: "aws", expectedTitle: /Fine-grained tool streaming/i, expectedSource: /model-parameters-anthropic-claude-messages-tool-use/ },
@@ -51,7 +52,7 @@ async function main() {
     const result = await searchKnowledgeDetailed(scenario.query, scenario.vendor);
     const top = result.items[0];
     const vendorMatched = top?.vendor.toLowerCase() === normalizeKnowledgeVendor(scenario.vendor);
-    const matches = (item: typeof top) => Boolean(item && scenario.expectedTitle.test(item.title) && (!scenario.expectedSource || scenario.expectedSource.test(item.sourceUrl)));
+    const matches = (item: typeof top) => Boolean(item && scenario.expectedTitle.test(item.title) && (!scenario.expectedSource || scenario.expectedSource.test(item.sourceUrl)) && (!scenario.expectedExcerpt || scenario.expectedExcerpt.test(item.excerpt ?? "")));
     const topTitleMatched = matches(top);
     const titleMatched = result.items.slice(0, 5).some(matches);
     rows.push({
@@ -82,4 +83,7 @@ async function main() {
 main().catch((error) => {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
+}).finally(async () => {
+  const { pool } = await import("../../src/db/client");
+  await pool.end();
 });

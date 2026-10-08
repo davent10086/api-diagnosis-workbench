@@ -9,6 +9,7 @@ type Hit = {
   sourceUrl: string;
   body: string;
   score: number;
+  excerpt?: string;
 };
 type Meta = { fallbackToAll: boolean; vendorHitCount: number; fallbackHitCount: number; backend: string };
 export function KnowledgeSearch() {
@@ -90,7 +91,7 @@ export function KnowledgeSearch() {
             {x.sourceUrl && <a href={x.sourceUrl} target="_blank" rel="noreferrer" className="shrink-0 text-xs text-blue-700 hover:underline">查看原文</a>}
           </div>
           <p className="mt-2 line-clamp-3 text-sm text-slate-600">
-            {x.body.replace(/^---[\s\S]*?---/, "")}
+            {(x.excerpt ?? x.body).replace(/^---[\s\S]*?---/, "")}
           </p>
         </article>
       ))}

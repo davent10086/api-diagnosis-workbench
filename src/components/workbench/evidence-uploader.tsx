@@ -14,7 +14,7 @@ export function EvidenceUploader({ files, onChange }: Props) {
   const addFiles = (next: File[]) => {
     const invalid = next.find((file) => file.size === 0 || file.size > MAX_BYTES || !allowedTypes.has(file.type));
     if (invalid) {
-      setError(invalid.size === 0 || invalid.size > MAX_BYTES ? "每个文件必须介于 1 B 和 10 MB 之间。" : "只支持 JSON、TXT、PNG 和 JPEG 文件。");
+      setError(invalid.size === 0 || invalid.size > MAX_BYTES ? "每个文件必须介于 1 B 和 10 MB 之间。" : "只支持 JSON、TXT、PNG、JPEG 和 WEBP 文件。");
       return;
     }
     setError("");
@@ -44,7 +44,7 @@ export function EvidenceUploader({ files, onChange }: Props) {
         onDrop={onDrop}
       >
         <FileUp />
-        <span>拖拽或选择 PNG、JPEG、JSON、TXT（单个最大 10 MB）</span>
+        <span>拖拽或选择 PNG、JPEG、WEBP、JSON、TXT（单个最大 10 MB）</span>
         <input
           id="evidence-files"
           className="hidden"

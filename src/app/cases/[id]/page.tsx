@@ -8,6 +8,8 @@ import { db } from "@/db/client";
 import { DeleteCaseButton } from "@/components/delete-case-button";
 import { DiagnosisLiveRefresh } from "@/components/diagnosis-live-refresh";
 import { DiagnosisReview } from "@/components/diagnosis-review";
+import { ImageEvidenceDetails } from "@/components/image-evidence-details";
+import { ModelReasoning } from "@/components/model-reasoning";
 import {
   apiTraces,
   cases,
@@ -67,6 +69,7 @@ export default async function Detail({ params, searchParams }: { params: Promise
         .where(eq(diagnosisWorkflowSteps.diagnosisId, displayRun.id))
     : [];
   const reviews = displayRun ? await db.select().from(diagnosisReviews).where(eq(diagnosisReviews.diagnosisId, displayRun.id)).orderBy(desc(diagnosisReviews.createdAt)) : [];
+  const latestReview = reviews[0];
   const aiReport =
     displayRun?.status === "completed" ? (displayRun.report as Record<string, unknown>) : null;
   return (
@@ -129,6 +132,7 @@ export default async function Detail({ params, searchParams }: { params: Promise
               assetCount={assets.length}
               citationCount={runCitations.length}
               retrieval={(displayRun.report as { retrieval?: Record<string, unknown> }).retrieval}
+              reasoning={(displayRun.report as { model_reasoning?: unknown; output?: { model_reasoning?: unknown } }).model_reasoning ?? (displayRun.report as { output?: { model_reasoning?: unknown } }).output?.model_reasoning}
               workflowSteps={workflowSteps.map((step) => ({ nodeName: step.nodeName, status: step.status, summary: step.summary }))}
             />
           </>
@@ -145,7 +149,7 @@ export default async function Detail({ params, searchParams }: { params: Promise
                   置信度 {String(aiReport.confidence)}% · {faultLayerLabel(String(aiReport.fault_layer))}
                 </p>
                 <p className="mt-1 text-sm font-semibold text-blue-800">
-                  结论状态：{String(aiReport.conclusion_status ?? "provisional") === "confirmed" ? "已确认" : String(aiReport.conclusion_status ?? "provisional") === "insufficient" ? "证据不足" : "初步判断，待人工确认"}
+                  结论状态：{latestReview?.verdict === "confirmed" ? "已人工确认" : latestReview?.verdict === "corrected" ? "已人工修正" : latestReview?.verdict === "rejected" ? "已人工驳回" : String(aiReport.conclusion_status ?? "provisional") === "insufficient" ? "证据不足" : "初步判断，待人工确认"}
                 </p>
               </div>
               <div>
@@ -155,7 +159,7 @@ export default async function Detail({ params, searchParams }: { params: Promise
                 </p>
               </div>
               <ReportList title="已确认的证据" items={aiReport.confirmed_evidence} evidenceIds={new Set(Array.isArray(aiReport.evidence_ledger) ? aiReport.evidence_ledger.map((entry: { id?: unknown }) => String(entry.id)) : [])} />
-              <ReportList title="确认阻断项" items={aiReport.confirmation_blockers} />
+              <ReportList title="自动确认阻断项" items={aiReport.confirmation_blockers} />
               <ReportList title="待验证假设" items={aiReport.hypotheses} />
               <ReportList title="缺失证据" items={aiReport.missing_evidence} />
               <ReportList title="下一步操作" items={aiReport.next_actions} emphasize />
@@ -193,7 +197,7 @@ export default async function Detail({ params, searchParams }: { params: Promise
             <p className="mt-2 text-sm text-muted">尚无附件。</p>
           ) : (
             assets.map((asset) => (
-              <p className="mt-2 scroll-mt-24 text-sm" id={`asset-${asset.id}`} key={asset.id}>
+              <div className="mt-2 scroll-mt-24 rounded border border-slate-200 p-3 text-sm" id={`asset-${asset.id}`} key={asset.id}>
                 {asset.extraction &&
                 typeof asset.extraction === "object" &&
                 "originalName" in asset.extraction
@@ -202,13 +206,15 @@ export default async function Detail({ params, searchParams }: { params: Promise
                 {asset.extraction &&
                 typeof asset.extraction === "object" &&
                 "status" in asset.extraction &&
-                asset.extraction.status === "failed" &&
+                (asset.extraction.status === "failed" || asset.extraction.status === "unreadable") &&
                 "error" in asset.extraction &&
                 typeof asset.extraction.error === "string" ? (
                   <span className="ml-2 text-amber-700">图片提取失败：{asset.extraction.error}</span>
                 ) : null}
                 · {redactionStatusLabel(asset.redactionStatus)}
-              </p>
+                {/\.(png|jpe?g|webp)$/i.test(asset.filePath) && <a className="ml-3 text-blue-700 underline" href={`/api/cases/${id}/evidence/${asset.id}`} target="_blank" rel="noreferrer">查看原图</a>}
+                <ImageEvidenceDetails extraction={asset.extraction} />
+              </div>
             ))
           )}
         </section>
@@ -382,6 +388,7 @@ function ExecutionLog({
   assetCount,
   citationCount,
   retrieval,
+  reasoning,
   workflowSteps,
 }: {
   status: string;
@@ -391,6 +398,7 @@ function ExecutionLog({
   assetCount: number;
   citationCount: number;
   retrieval?: Record<string, unknown>;
+  reasoning?: unknown;
   workflowSteps: { nodeName: string; status: string; summary: string | null }[];
 }) {
   const done = status === "completed";
@@ -425,8 +433,8 @@ function ExecutionLog({
   ];
   return (
     <section className="panel p-4">
-      <h2 className="section-title">诊断执行日志</h2>
-      <p className="mt-1 text-xs text-muted">展示可审计执行节点，不展示或保存模型原始思维链。</p>
+      <h2 className="section-title">推断过程</h2>
+      <p className="mt-1 text-xs text-muted">展示诊断执行节点与模型返回的思考内容。</p>
       <ol className="mt-4 space-y-3">
         {steps.map(([name, detail], index) => (
           <li className="flex gap-3 text-sm" key={name}>
@@ -451,6 +459,7 @@ function ExecutionLog({
           ))}
         </div>
       )}
+      <ModelReasoning reasoning={reasoning} status={status} />
     </section>
   );
 }

@@ -14,13 +14,13 @@ export async function enqueueDiagnosis(caseId: string, reasoningEffort: "low" | 
   return (await getBoss()).send("diagnose-case", { caseId, reasoningEffort });
 }
 export async function startDiagnosisWorker(
-  run: (caseId: string, reasoningEffort: "low" | "high" | "max") => Promise<unknown>,
+  run: (caseId: string, reasoningEffort: "low" | "high" | "max", signal?: AbortSignal, jobId?: string) => Promise<unknown>,
 ) {
   const queue = await getBoss();
   await queue.work<{ caseId: string; reasoningEffort: "low" | "high" | "max" }>(
     "diagnose-case",
     async (jobs) => {
-      for (const job of jobs) await run(job.data.caseId, job.data.reasoningEffort);
+      for (const job of jobs) await run(job.data.caseId, job.data.reasoningEffort, undefined, job.id);
     },
   );
 }

@@ -63,7 +63,7 @@ export function DiagnosisRunner({ caseId, latestStatus }: { caseId: string; late
       <div>
         <h2 className="section-title">千问深度诊断</h2>
         <p className="mt-2 text-sm leading-6 text-muted">
-          向模型发送已脱敏的 Trace、文本和已上传的截图以提取排障线索。推理过程不会保存或展示。
+          向模型发送已脱敏的 Trace、文本和已上传的截图以提取排障线索。模型返回的思考内容会随诊断保存，并在“推断过程”中展示。
         </p>
       </div>
       <label className="mt-4 block max-w-xs text-sm font-medium text-slate-700">

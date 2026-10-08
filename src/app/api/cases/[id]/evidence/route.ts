@@ -9,8 +9,8 @@ import { cases, evidenceAssets } from "@/db/schema";
 import { storageFilePath, storageRoot } from "@/lib/storage";
 
 const MAX_BYTES = 10 * 1024 * 1024;
-const extensionType: Record<string, "application/json" | "text/plain" | "image/png" | "image/jpeg"> = {
-  json: "application/json", txt: "text/plain", log: "text/plain", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+const extensionType: Record<string, "application/json" | "text/plain" | "image/png" | "image/jpeg" | "image/webp"> = {
+  json: "application/json", txt: "text/plain", log: "text/plain", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp",
 };
 
 function detectedMimeType(file: File) {
@@ -21,6 +21,7 @@ function detectedMimeType(file: File) {
 function validImageSignature(mimeType: string, data: Buffer) {
   if (mimeType === "image/png") return data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
   if (mimeType === "image/jpeg") return data[0] === 255 && data[1] === 216 && data[2] === 255;
+  if (mimeType === "image/webp") return data.subarray(0, 4).toString("ascii") === "RIFF" && data.subarray(8, 12).toString("ascii") === "WEBP";
   return true;
 }
 
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: "文件必须介于 1 B 和 10 MB 之间。" }, { status: 400 });
 
   const mimeType = detectedMimeType(file);
-  if (!mimeType) return NextResponse.json({ error: "仅支持 PNG、JPEG、JSON、TXT 和 LOG 文件。" }, { status: 415 });
+  if (!mimeType) return NextResponse.json({ error: "仅支持 PNG、JPEG、WEBP、JSON、TXT 和 LOG 文件。" }, { status: 415 });
   const { id } = await params;
   if (!z.string().uuid().safeParse(id).success) return NextResponse.json({ error: "案件 ID 无效。" }, { status: 400 });
 
@@ -73,6 +74,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const storedName = `${randomUUID()}-${safeName || "evidence"}`;
   const root = storageRoot();
   const path = join(root, storedName);
+  const requestedType = z.enum(["customer_chat", "request", "response", "backend_log", "sse", "trace", "other"]).safeParse(form.get("evidenceType"));
+  const evidenceType = requestedType.success ? requestedType.data : inferEvidenceType(file.name, mimeType, data);
   try {
     await mkdir(root, { recursive: true });
     await writeFile(path, data, { flag: "wx" });
@@ -80,11 +83,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       caseId: id,
       filePath: storageFilePath(storedName),
       fileHash: createHash("sha256").update(data).digest("hex"),
-      evidenceType: inferEvidenceType(file.name, mimeType, data),
+      evidenceType,
       redactionStatus,
       extraction: { originalName: file.name.slice(0, 255), mimeType, size: data.length },
     }).returning({ id: evidenceAssets.id });
-    return NextResponse.json({ ...asset, mimeType, evidenceType: inferEvidenceType(file.name, mimeType, data) }, { status: 201 });
+    return NextResponse.json({ ...asset, mimeType, evidenceType }, { status: 201 });
   } catch {
     await rm(path, { force: true }).catch(() => undefined);
     return NextResponse.json({ error: "无法保存证据。" }, { status: 503 });

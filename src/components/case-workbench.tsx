@@ -34,11 +34,12 @@ const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPTED_TYPES = new Set([
   "image/png",
   "image/jpeg",
+  "image/webp",
   "application/json",
   "text/plain",
 ]);
-const ACCEPTED_EXTENSIONS = new Set(["png", "jpg", "jpeg", "json", "txt", "log"]);
-const ACCEPT = "image/png,image/jpeg,.json,.txt,.log,application/json,text/plain";
+const ACCEPTED_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "json", "txt", "log"]);
+const ACCEPT = "image/png,image/jpeg,image/webp,.json,.txt,.log,application/json,text/plain";
 
 type EvidenceType =
   | "customer_chat"
@@ -95,7 +96,7 @@ const emptyMetadata: Metadata = {
 };
 
 function isImage(file: File) {
-  return file.type === "image/png" || file.type === "image/jpeg" || /\.(png|jpe?g)$/i.test(file.name);
+  return file.type === "image/png" || file.type === "image/jpeg" || file.type === "image/webp" || /\.(png|jpe?g|webp)$/i.test(file.name);
 }
 
 function isSupportedEvidenceFile(file: File) {
@@ -480,7 +481,7 @@ export function CaseWorkbench() {
               />
               <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
                 <ClipboardPaste size={14} />
-                支持 Ctrl + V 粘贴文字或图片；图片不会进行 OCR。
+                支持 Ctrl + V 粘贴文字或图片；诊断时会提取可辨认的图片字段供你核对。
               </p>
               {chatImages.length > 0 && (
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -558,6 +559,7 @@ export function CaseWorkbench() {
                 <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
                   文本预览会遮蔽 Authorization、API Key、Bearer Token、Cookie、Email、IP、Access Key
                   与 Secret Key。图片会保留原图并直接用于诊断识别。
+                  每次处理前 5 张图片，其余图片会明确标为未处理。
                 </p>
               )}
               <div

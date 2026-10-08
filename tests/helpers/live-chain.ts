@@ -126,6 +126,7 @@ try {
       if (run?.status === "completed") {
         const report = run.report as Record<string, unknown>;
         if (!report.summary || !report.root_cause || !Array.isArray(report.confirmed_evidence)) throw new Error("Incomplete report.");
+        if (typeof report.model_reasoning !== "string" || !report.model_reasoning.trim()) throw new Error("Diagnosis did not retain model reasoning.");
         const ledger = report.evidence_ledger as { id?: string }[] | undefined;
         if (!Array.isArray(ledger) || !ledger.length || !report.confirmed_evidence.length)
           throw new Error("Report has no evidence references.");
@@ -136,6 +137,8 @@ try {
         const [image] = await db.select().from(schema.evidenceAssets).where(eq(schema.evidenceAssets.caseId, caseId));
         const extraction = image?.extraction as { status?: string; fields?: string[] } | undefined;
         if (extraction?.status !== "completed" || !Array.isArray(extraction.fields)) throw new Error("Image extraction did not complete.");
+        const imageText = extraction.fields.join("\n");
+        if (!imageText.includes(requestId) || !/429/.test(imageText)) throw new Error("Image extraction did not read the visible request ID and HTTP 429.");
         if (extraction.fields.some((field) => /(?:upstream.?request.?id|retry.?count)\s*[:=]\s*(?!null\b|none\b)\S+/i.test(field)))
           throw new Error("Image extraction invented a value for a null field.");
         const review = await fetch(`${app}/api/cases/${caseId}/diagnosis/review`, {
@@ -155,6 +158,9 @@ try {
     const page = await browser!.newPage();
     await page.goto(`${app}/cases/${caseId}`);
     await page.getByText(runId).first().waitFor({ timeout: 15_000 });
+    await page.getByText("展开思考过程", { exact: true }).click();
+    const thinking = page.locator("details").filter({ has: page.getByText("展开思考过程", { exact: true }) });
+    if (!(await thinking.locator("pre").textContent())?.trim()) throw new Error("Model reasoning is not visible in the report page.");
     await page.close();
   });
   console.log(`[${runId}] complete (${Date.now() - started} ms)`);

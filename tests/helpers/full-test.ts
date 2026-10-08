@@ -56,17 +56,19 @@ async function main() {
   try {
     const gatewayUrl = process.env.NEW_API_BASE_URL || "http://127.0.0.1:3000";
     if (!(await reachable(gatewayUrl))) throw new Error(`new-api is unavailable at ${gatewayUrl}.`);
-    if (!(await reachable(appUrl))) {
-      if (process.env.E2E_BASE_URL) throw new Error(`Configured E2E_BASE_URL is unavailable: ${appUrl}.`);
-      console.log("[test:full] starting local app on port 3002");
-      await waitReady(appUrl, background(["run", "dev", "--", "--port", "3002"]));
-    }
     stage("test database", ["run", "db:test:prepare"]);
     stage("lint", ["run", "lint"]);
     stage("types", ["run", "typecheck"]);
     stage("unit tests", ["run", "test:unit"], testEnv);
     stage("database integration", ["run", "test:integration"], testEnv);
-    stage("browser checks", ["run", "test:e2e"], { ...testEnv, E2E_BASE_URL: appUrl });
+    // Browser fixtures and their app must share the isolated test database.
+    // Let Playwright start its own app; the live app is started afterward.
+    stage("browser checks", ["run", "test:e2e"], { ...testEnv, E2E_BASE_URL: "", STORAGE_ROOT: "storage-test" });
+    if (!(await reachable(appUrl))) {
+      if (process.env.E2E_BASE_URL) throw new Error(`Configured E2E_BASE_URL is unavailable: ${appUrl}.`);
+      console.log("[test:full] starting local app on port 3002");
+      await waitReady(appUrl, background(["run", "dev", "--", "--port", "3002"]));
+    }
     await assertQueueIdle();
     background(["exec", "--", "tsx", "src/worker.ts"]);
     stage("live local chain", ["exec", "--", "tsx", "tests/helpers/live-chain.ts"], { ...process.env, E2E_BASE_URL: appUrl });

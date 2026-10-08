@@ -76,7 +76,7 @@ npm run dev-all
 ## 使用流程
 
 1. 在“案件”中新建记录，填写客户问题和可获得的 Trace、请求/响应、日志或 SSE 事件。
-2. 上传所需证据；确认文本脱敏结果，并对图片明确确认已脱敏。
+2. 上传所需证据；确认文本脱敏结果。图片会原样发送至视觉模型，请先自行遮盖其中的密钥与客户敏感信息。
 3. 运行规则诊断，查看命中的规则、证据与需要补充的信息。
 4. 完成案件后，若已配置 DashScope，可选择推理强度运行 AI 诊断。
 5. 在诊断报告中核对确定性规则、Trace、图片及知识库引用；将假设与已确认结论区分处理。
@@ -107,6 +107,10 @@ npm run knowledge:import
 
 导入器按标题切分内容并写入 `document_chunks`。访问 `/knowledge` 可搜索已导入内容。`embedding` 是预留字段，当前实现不依赖 pgvector 或外部 Embedding 服务。
 
+诊断检索保留完整错误码和工具标识符，结合多个检索词的排名选出最多 5 个文档块，并按命中位置生成模型输入及引用摘录。升级后执行 `npm run db:migrate` 创建与查询表达式一致的 PGroonga 索引；未安装 PGroonga 时仍使用 PostgreSQL 包含匹配。
+
+导入知识库后可运行 `npm run test:knowledge:search`，只读验证手动检索及案件自动提词、排序、摘录的完整链路；该命令不调用模型，也不修改案件。
+
 如需清空已导入知识库：
 
 ```powershell
@@ -115,7 +119,13 @@ npm run knowledge:clean
 
 ## AI 诊断与数据边界
 
-AI 请求由服务端直接发送至 DashScope，输入仅包含案件中的最小必要证据。仅状态为已脱敏的 PNG/JPEG 图片会被发送给视觉模型；每次最多处理 5 张图片，并发提取数为 2。模型输出会经过结构校验和证据引用校验，不能引用未提供的规则、Trace、图片或知识库条目。
+诊断模型返回的 `reasoning_content` 会保存在该次诊断报告的 `model_reasoning` 字段中，案件页面的“推断过程 → 模型思考”可折叠查看。当前在模型完整返回后展示，历史记录可分别查看；旧记录或未返回思考内容的模型会显示提示。思考内容不参与证据校验或根因确认，不会作为后续诊断的输入。支持混合思考的 Qwen 型号会显式开启 `enable_thinking`。
+
+AI 请求由服务端直接发送至 DashScope。PNG/JPEG/WEBP 图片保留原图，小字图片会在内存中放大，长截图最多分为 8 个重叠片段；超过分段上限的区域会明确提示未识别。每次按上传顺序处理前 5 张图片，并发提取数为 2，其余图片标为未处理。图片没有自动脱敏，`direct_upload` 表示原样上传，不能视为已脱敏。
+
+图片提取保存逐字段的原文和位置说明，报告可引用 `image:<id>[字段索引]`，并可从案件页面查看原图复核。截图产生的规则线索始终待人工核对；图片与 Trace 冲突时需核查原始日志。提取缓存按图片哈希、模型与提取版本区分，重新诊断会刷新不匹配的缓存。部分图片识别失败时，模型和报告都会明确说明缺失证据；所有图片无法识别且没有其他请求、响应或日志时，会停止诊断并要求补证。
+
+如需验证本地真实截图，先在忽略提交的 `test-results/vision-error-cases.json` 中配置样本数组（每项包含 `file` 相对路径、`required` 预期字段数组、`forbiddenStatus` 是否禁止推测状态码），再显式设置 `RUN_LIVE_VISION_TESTS=1` 后运行 `npx tsx tests/helpers/vision-error-eval.ts <error截图目录>`。该命令使用现有百炼配置，将所选截图发送给视觉模型，只将结果写入忽略提交的 `test-results/vision-error-eval.json`，不创建案件或修改数据库。可用 `VISION_SAMPLE_FILTER` 按文件名筛选样本。
 
 诊断失败或被取消时，已完成的规则诊断和案件数据会保留，案件可再次诊断。请在向外部模型传输任何资料前，确认其符合组织的数据安全要求。
 
@@ -157,6 +167,8 @@ npm run build
 Playwright 首次使用须执行 `npx playwright install chromium`。真实模型 smoke 默认
 跳过；仅在同时设置 `RUN_LIVE_LLM_TESTS=1` 与 `DASHSCOPE_API_KEY` 后运行
 `npm run test:live-llm`。它只发送最小 JSON 提示和一张生成的空白测试图片，不上传案件附件、不写数据库。
+
+若要用真实模型诊断合成错误案件，先运行 `npm run db:test:prepare`，确认 `.env.local` 已配置 `DASHSCOPE_API_KEY`，再运行 `npm run test:live-diagnosis:scenarios`。脚本在 `_test` 数据库中保留四个合成案件（502 缺少上游响应、429 缺少重试上下文、Bedrock 工具不兼容、上下文窗口超限），并将完整结果写入忽略提交的 `test-results/live-diagnosis-<批次>.json`。修改结论判定代码后，可执行 `npm run test:live-diagnosis:recheck -- test-results/live-diagnosis-<批次>.json`，只重新判定已保存报告，不再次调用模型。
 
 演示数据包含 Bedrock `web_search_20250305` 工具不兼容、SSE 生命周期异常与 `502 + context canceled` 等排障场景。
 ## 完整本地验证
