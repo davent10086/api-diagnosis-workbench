@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { redact } from "./redaction";
 
-const logSchema = z.object({
+export const logSchema = z.object({
   request_id: z.string(),
   upstream_request_id: z.string().optional().nullable(),
   model_name: z.string().optional().nullable(),
@@ -12,6 +12,9 @@ const logSchema = z.object({
   content: z.string().optional().nullable(),
   is_stream: z.boolean().optional().nullable(),
   use_time: z.number().int().optional().nullable(),
+  username: z.string().optional().nullable(),
+  token_name: z.string().optional().nullable(),
+  group: z.string().optional().nullable(),
 });
 
 export const logPageSchema = z.object({

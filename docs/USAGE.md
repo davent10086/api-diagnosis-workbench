@@ -101,6 +101,8 @@ npm run dev-all
 
 ### 从 new-api 导入日志
 
+没有 Request ID 或客户时间不准确时，可使用工作台“时间不准或没有 Request ID？按特征查找”入口；操作步骤、查询范围和结果说明见[时间容错与请求定位](REQUEST_LOCATION.md)。
+
 在 new-api 后台的安全设置中生成有日志查看权限的管理员 Access Token，并在排障工具的 `.env.local` 中配置 `NEW_API_BASE_URL` 和 `NEW_API_ACCESS_TOKEN`。两项配置仅由排障工具服务端读取，修改后重启服务。
 
 在“新建排障案件”的“案件信息”中填写 Request ID，点击“按 Request ID 导入”。工具会从 new-api 的 `/api/log/` 查询这一条日志，填入模型、请求 ID、上游请求 ID、发生时间，并把日志内容作为排障线索。new-api 日志不包含完整请求体、上游响应体和准确的 HTTP 状态码时，请继续手动补充这些证据；工具不会根据错误日志猜测状态码。

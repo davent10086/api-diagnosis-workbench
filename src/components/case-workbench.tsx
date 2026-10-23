@@ -29,6 +29,8 @@ import {
   useState,
 } from "react";
 import { redact } from "@/lib/redaction";
+import { RequestLocator } from "./request-locator";
+import { buildLocationImport } from "@/lib/request-location-review";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPTED_TYPES = new Set([
@@ -463,6 +465,11 @@ export function CaseWorkbench() {
             没有 Request ID？<a className="font-medium text-blue-700 hover:underline" href="#manual-evidence">直接手动录入</a>。
             查询只执行一次，不会自动同步 new-api 后续日志。
           </p>
+          <RequestLocator question={question} onImport={(candidate, result) => {
+            setImportedLog(buildLocationImport(candidate, result));
+            setMetadata((current) => ({ ...current, ...candidate.imported.metadata, statusCode: "" }));
+            setToast("已确认并导入该请求；查询依据将随案件保存，故障根因仍需诊断。");
+          }} />
         </section>
         <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
           <div className="space-y-5">

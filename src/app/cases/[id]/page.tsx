@@ -252,6 +252,7 @@ const workflowNodeLabels: Record<string, string> = {
   images: "图片证据提取",
   retrieval: "本地知识库检索",
   model: "模型诊断",
+  validate: "校验证据引用",
   adjudicate: "结论裁定",
   validate_and_persist: "校验并保存报告",
 };
@@ -336,6 +337,7 @@ function evidenceIdLabel(id: string) {
 function workflowSummaryLabel(summary: string) {
   if (summary === "case, trace and evidence loaded") return "案件、追踪信息和证据已加载";
   if (summary === "model report received") return "已收到模型诊断报告";
+  if (summary === "evidence references validated") return "证据引用已校验";
   if (summary === "report and citations saved") return "诊断报告和引用资料已保存";
   if (summary === "no supported images") return "没有可处理的图片";
   if (summary === "knowledge search unavailable") return "知识库检索不可用";

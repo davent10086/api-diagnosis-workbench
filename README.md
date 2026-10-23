@@ -5,6 +5,7 @@
 ## 核心功能
 
 - 按 Request ID 导入 new-api 日志，关联客户问题、请求、响应和截图。
+- 时间不准时按客户账号与请求特征容错检索，显示候选、时间偏差和查询依据，人工确认后导入。
 - 规则诊断：排查 429/5xx、超时、SSE 异常和模型/工具参数兼容问题。
 - AI 辅助分析：识别截图、检索官方知识库，生成带证据引用的报告。
 - 前端展示思考过程，保存诊断历史，支持人工确认、修正和驳回。
@@ -52,7 +53,9 @@ npm run dev-all
 
 ## 更多
 
+- [LangChain / LangGraph 诊断架构](docs/ARCHITECTURE.md)
+- [时间容错与请求定位](docs/REQUEST_LOCATION.md)
 - [使用、配置与测试说明](docs/USAGE.md)
 - [测试报告及已知问题](TEST_REPORT_2026-10-08.md)
 
-技术栈：Next.js、React、TypeScript、PostgreSQL、Drizzle ORM、pg-boss；PGroonga 可选。
+技术栈：Next.js、React、TypeScript、LangChain、LangGraph、PostgreSQL、Drizzle ORM、pg-boss；PGroonga 可选。
