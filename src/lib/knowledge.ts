@@ -16,6 +16,7 @@ export type KnowledgeHit = {
 export type KnowledgeSearchMeta = {
   vendor: string | null; fallbackToAll: boolean; vendorHitCount: number; fallbackHitCount: number;
   backend: "pgroonga" | "postgres-contains" | "unavailable"; error?: string;
+  gatewayHitCount?: number;
 };
 export type KnowledgeSearchResult = { items: KnowledgeHit[]; meta: KnowledgeSearchMeta };
 export function normalizeKnowledgeVendor(vendor?: string) {
@@ -24,6 +25,7 @@ export function normalizeKnowledgeVendor(vendor?: string) {
   if (/(?:gemini|google)/.test(normalized)) return "google gemini";
   if (/(?:bedrock|aws)/.test(normalized)) return "aws";
   if (/(?:claude|anthropic)/.test(normalized)) return "anthropic";
+  if (/^new[-_ ]?api$/.test(normalized)) return "new api";
   return normalized;
 }
 function safeError(error: unknown) {
@@ -112,10 +114,21 @@ export async function searchKnowledgeQueries(
   // few and limit database concurrency so a single diagnosis cannot exhaust the
   // connection pool.
   const uniqueQueries = [...new Set(queries.map((query) => query.trim()).filter((query) => query.length >= 2))].slice(0, 8);
-  const results = await mapWithConcurrency(uniqueQueries, 2, (query) => searchKnowledgeDetailed(query, vendor));
-  const items = fuseKnowledgeResults(results.map((result) => result.items), uniqueQueries);
+  const normalizedVendor = normalizeKnowledgeVendor(vendor);
+  // Gateway configuration can explain a failure even when upstream documents match.
+  // Search it independently rather than waiting for the upstream scope to be empty.
+  const tasks = uniqueQueries.flatMap((query) => [
+    { query, gateway: false },
+    ...(normalizedVendor && normalizedVendor !== "new api" ? [{ query, gateway: true }] : []),
+  ]);
+  const results = await mapWithConcurrency(tasks, 2, async (task): Promise<KnowledgeSearchResult> => {
+    if (!task.gateway) return searchKnowledgeDetailed(task.query, vendor);
+    const result = await queryOnce(task.query, "new api");
+    return { items: dedupe(result.items), meta: { vendor: "new api", fallbackToAll: false, vendorHitCount: 0, fallbackHitCount: 0, gatewayHitCount: result.items.length, backend: result.backend, ...(result.error ? { error: result.error } : {}) } };
+  });
+  const items = fuseKnowledgeResults(results.map((result) => result.items), tasks.map((task) => task.query));
   const unavailable = results.length > 0 && results.every((result) => result.meta.backend === "unavailable");
-  return { items, meta: { vendor: normalizeKnowledgeVendor(vendor) ?? null, fallbackToAll: results.some((result) => result.meta.fallbackToAll), vendorHitCount: results.reduce((n, result) => n + result.meta.vendorHitCount, 0), fallbackHitCount: results.reduce((n, result) => n + result.meta.fallbackHitCount, 0), backend: unavailable ? "unavailable" : results.some((result) => result.meta.backend === "pgroonga") ? "pgroonga" : "postgres-contains", ...(unavailable ? { error: results.find((result) => result.meta.error)?.meta.error ?? "search backend unavailable" } : {}) } };
+  return { items, meta: { vendor: normalizedVendor ?? null, fallbackToAll: results.some((result) => result.meta.fallbackToAll), vendorHitCount: results.reduce((n, result) => n + result.meta.vendorHitCount, 0), fallbackHitCount: results.reduce((n, result) => n + result.meta.fallbackHitCount, 0), gatewayHitCount: results.reduce((n, result) => n + (result.meta.gatewayHitCount ?? 0), 0), backend: unavailable ? "unavailable" : results.some((result) => result.meta.backend === "pgroonga") ? "pgroonga" : "postgres-contains", ...(unavailable ? { error: results.find((result) => result.meta.error)?.meta.error ?? "search backend unavailable" } : {}) } };
 }
 
 async function mapWithConcurrency<T, R>(

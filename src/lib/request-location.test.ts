@@ -49,6 +49,20 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("keeps mixed historical pages queryable without inventing IDs for legacy rows", async () => {
+  const { request_id: omittedId, ...legacy } = log();
+  expect(omittedId).toBe("req-a");
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+    success: true, data: { items: [legacy, log()], total: 2 },
+  })));
+  const response = await createRequestLogTool({ username: "alice", confirmed: {} })
+    .invoke({ page: 1, pageSize: 100 });
+  expect(response.items).toHaveLength(2);
+  expect(response.items[0].request_id).toBe("");
+  const candidates = rankRequestCandidates(response.items, input(), null);
+  expect(candidates.map((candidate) => candidate.requestId)).toEqual(["req-a"]);
+});
+
 describe("customer time hypotheses", () => {
   it("interprets local time with the selected offset and honors an explicit ISO timezone", () => {
     expect(parseCustomerTime(input(), now).timestamp).toBe(

@@ -19,6 +19,10 @@ async function main() {
     if (!matched) process.exitCode = 1;
   }
   const plan = await pool.query("EXPLAIN SELECT id FROM document_chunks WHERE (coalesce(title, '') || ' ' || coalesce(category, '') || ' ' || coalesce(body, '')) &@ 'ValidationException'");
+  const gateway = await searchKnowledgeQueries(["STREAMING_TIMEOUT"], "openai");
+  const gatewayMatched = gateway.items.some((hit) => hit.vendor === "new api" && /STREAMING_TIMEOUT/.test(hit.excerpt ?? ""));
+  console.log(JSON.stringify({ name: "Gateway documents with upstream vendor filter", passed: gatewayMatched, titles: gateway.items.map((hit) => hit.title) }));
+  if (!gatewayMatched) process.exitCode = 1;
   console.log(JSON.stringify({ searchPlan: plan.rows }));
 }
 

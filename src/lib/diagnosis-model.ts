@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ChatOpenAI } from "@langchain/openai";
 import type { BaseMessageLike } from "@langchain/core/messages";
+import { consumeModelRequestBudget } from "./model-budget";
 import { buildEvidenceLedger, parseEvidenceReference } from "@/lib/diagnosis-quality";
 import type { ImageExtraction } from "@/lib/diagnosis-image";
 import type { ImageIssue } from "@/lib/image-evidence";
@@ -96,7 +97,7 @@ export function validateEvidence(report: AiReport, context: EvidenceContext) {
       throw new Error(`Invalid evidence reference: ${evidence}`);
   }
 }
-function config() {
+export function diagnosisModelConfig() {
   const apiKey = process.env.DASHSCOPE_API_KEY;
   if (!apiKey) throw new Error("百炼模型未配置：请设置 DASHSCOPE_API_KEY。");
   const legacyBase = process.env.DASHSCOPE_BASE_URL?.replace(
@@ -132,8 +133,9 @@ async function openAICompatibleAttempt(
   signal?: AbortSignal,
   onReasoning?: (text: string) => void,
 ) {
-  const { baseUrl, apiKey } = config();
+  const { baseUrl, apiKey } = diagnosisModelConfig();
   assertNotAborted(signal);
+  consumeModelRequestBudget();
   // DashScope's separate reasoning field is provider-specific. Preserve it at
   // the transport boundary, since ChatOpenAI may discard nonstandard fields.
   let providerReasoning: string | undefined;

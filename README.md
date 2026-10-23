@@ -8,6 +8,7 @@
 - 时间不准时按客户账号与请求特征容错检索，显示候选、时间偏差和查询依据，人工确认后导入。
 - 规则诊断：排查 429/5xx、超时、SSE 异常和模型/工具参数兼容问题。
 - AI 辅助分析：识别截图、检索官方知识库，生成带证据引用的报告。
+- 案件自主助手：模型按需选择工具或直接回答，展示执行记录，并限制账号范围与调用预算。
 - 前端展示思考过程，保存诊断历史，支持人工确认、修正和驳回。
 
 ## 快速开始
@@ -45,6 +46,8 @@ npm run dev-all
 
 可选知识库：设置 `KNOWLEDGE_BASE_PATH` 指向本地官方 Markdown 文档目录，执行 `npm run knowledge:import`。
 
+可运行 `scripts/sync-new-api-official-docs.ps1` 同步 new-api 官方文档，再执行 `npm run knowledge:import -- --vendor=new-api` 仅更新该来源。文档保留来源地址、抓取日期及 GitHub 版本；检索会同时考虑上游厂商和 new-api 网关文档，使用时需核对部署版本。
+
 ## 使用提醒
 
 - AI 诊断是辅助判断，结论需结合原始证据确认；缺失的请求、响应和日志应补充。
@@ -54,7 +57,9 @@ npm run dev-all
 ## 更多
 
 - [LangChain / LangGraph 诊断架构](docs/ARCHITECTURE.md)
+- [自主排障助手](docs/AUTONOMOUS_AGENT.md)
 - [时间容错与请求定位](docs/REQUEST_LOCATION.md)
+- [本地历史日志库接入](docs/HISTORICAL_DATABASE.md)
 - [使用、配置与测试说明](docs/USAGE.md)
 - [测试报告及已知问题](TEST_REPORT_2026-10-08.md)
 

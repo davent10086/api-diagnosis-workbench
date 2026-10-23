@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Top } from "@/components/app-shell";
 import { ResumeCase } from "@/components/workbench/resume-case";
 import { DiagnosisRunner } from "@/components/diagnosis-runner";
+import { CaseAgent } from "@/components/case-agent";
 import { db } from "@/db/client";
 import { DeleteCaseButton } from "@/components/delete-case-button";
 import { DiagnosisLiveRefresh } from "@/components/diagnosis-live-refresh";
@@ -100,6 +101,7 @@ export default async function Detail({ params, searchParams }: { params: Promise
           </section>
         )}
         {item.status === "uploading" && <ResumeCase caseId={id} assetCount={assets.length} />}
+        <CaseAgent caseId={id} />
         {item.status !== "uploading" && (
           <DiagnosisRunner caseId={id} latestStatus={latestRun?.status} />
         )}

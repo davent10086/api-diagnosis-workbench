@@ -2,7 +2,9 @@ import { z } from "zod";
 import { redact } from "./redaction";
 
 export const logSchema = z.object({
-  request_id: z.string(),
+  // new-api omits this JSON field for legacy rows with an empty request ID.
+  // Keep the page readable; request location excludes unidentifiable rows.
+  request_id: z.string().default(""),
   upstream_request_id: z.string().optional().nullable(),
   model_name: z.string().optional().nullable(),
   created_at: z.number().int().optional().nullable(),

@@ -12,6 +12,10 @@ type Scenario = {
 };
 
 const scenarios: Scenario[] = [
+  { name: "new-api 无可用渠道", query: "无可用渠道", vendor: "new-api", expectedTitle: /渠道|常见问题/, expectedSource: /QuantumNous\/new-api-docs-v1/, expectedExcerpt: /用户分组|渠道分组|模型设置/ },
+  { name: "new-api 参数覆盖", query: "keep_origin", vendor: "new-api", expectedTitle: /高级操作模式|操作模式|set/, expectedSource: /channel-management/, expectedExcerpt: /keep_origin/ },
+  { name: "new-api 流式超时", query: "STREAMING_TIMEOUT", vendor: "new-api", expectedTitle: /中继与代理配置|环境变量/, expectedSource: /environment-variables/, expectedExcerpt: /STREAMING_TIMEOUT/ },
+  { name: "new-api 代理设置", query: "socks5h", vendor: "new-api", expectedTitle: /渠道额外|升级兼容/, expectedSource: /other_setting/, expectedExcerpt: /socks5h/ },
   { name: "OpenAI 速率限制", query: "429 rate limit", vendor: "openai", expectedTitle: /错误|error|rate.limit|速率|限流/i },
   { name: "Anthropic SSE", query: "streaming SSE event", vendor: "anthropic", expectedTitle: /stream|SSE/i },
   { name: "Gemini 批处理", query: "batchGenerateContent", vendor: "google gemini", expectedTitle: /batch/i },
